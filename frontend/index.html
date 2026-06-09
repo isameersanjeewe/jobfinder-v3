@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobFinder</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Clash+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f5f4f0;
+  --ink: #0f0f0d;
+  --muted: #8a8a80;
+  --border: #ddddd5;
+  --surface: #ffffff;
+  --accent: #1a1a2e;
+  --green: #1a6b3c;
+  --red: #b91c1c;
+  --amber: #92400e;
+  --pill-green: #dcfce7;
+  --pill-red: #fee2e2;
+  --pill-amber: #fef3c7;
+  --mono: 'IBM Plex Mono', monospace;
+  --display: 'Clash Display', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 13px; min-height: 100vh; }
+
+/* NAV */
+nav { display:flex; align-items:center; justify-content:space-between; padding:16px 28px; border-bottom:1px solid var(--border); background:var(--surface); gap:16px; flex-wrap:wrap; }
+.wordmark { font-family:var(--display); font-size:20px; font-weight:700; letter-spacing:-0.5px; }
+.wordmark em { color:var(--muted); font-style:normal; font-weight:400; }
+
+/* USAGE BAR */
+.usage-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.usage-pill { display:flex; align-items:center; gap:5px; font-size:10px; padding:4px 10px; border-radius:20px; border:1px solid var(--border); background:var(--surface); white-space:nowrap; }
+.usage-pill .source { color:var(--muted); }
+.usage-pill .counts { font-weight:500; }
+.usage-pill .bar-wrap { width:40px; height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+.usage-pill .bar-fill { height:100%; border-radius:2px; background:var(--green); transition:width 0.3s; }
+.usage-pill .bar-fill.warn { background:var(--amber); }
+.usage-pill .bar-fill.full { background:var(--red); }
+
+/* LAYOUT */
+.shell { display:grid; grid-template-columns:272px 1fr; min-height:calc(100vh - 53px); }
+aside { border-right:1px solid var(--border); background:var(--surface); padding:20px 18px; display:flex; flex-direction:column; gap:22px; overflow-y:auto; }
+.section-label { font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+
+/* FORM */
+input[type="text"], textarea, select { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:8px 11px; font-family:var(--mono); font-size:12px; color:var(--ink); outline:none; transition:border-color 0.15s; }
+input[type="text"]:focus, textarea:focus, select:focus { border-color:var(--ink); }
+label { display:block; font-size:11px; color:var(--muted); margin-bottom:4px; margin-top:10px; }
+label:first-child { margin-top:0; }
+
+/* TOGGLES */
+.toggle-row { display:flex; align-items:center; justify-content:space-between; padding:6px 0; cursor:pointer; border-bottom:1px solid var(--border); }
+.toggle-row:last-child { border-bottom:none; }
+.toggle-name { font-size:12px; }
+.toggle-hint { font-size:10px; color:var(--muted); }
+.switch { width:32px; height:17px; background:var(--border); border-radius:9px; position:relative; transition:background 0.15s; flex-shrink:0; }
+.switch.on { background:var(--ink); }
+.switch::after { content:''; position:absolute; width:11px; height:11px; background:white; border-radius:50%; top:3px; left:3px; transition:left 0.15s; }
+.switch.on::after { left:18px; }
+
+/* FILE ZONE */
+.file-zone { border:1px dashed var(--border); border-radius:5px; padding:12px; text-align:center; cursor:pointer; transition:border-color 0.15s; position:relative; }
+.file-zone:hover { border-color:var(--ink); }
+.file-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+.file-zone-text { font-size:11px; color:var(--muted); }
+.file-zone-text strong { color:var(--ink); display:block; margin-bottom:2px; font-size:12px; }
+
+/* BUTTON */
+.btn-search { width:100%; padding:11px; background:var(--ink); color:white; border:none; border-radius:5px; font-family:var(--display); font-size:14px; font-weight:600; cursor:pointer; transition:opacity 0.15s; margin-top:auto; }
+.btn-search:hover { opacity:0.85; }
+.btn-search:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* MAIN */
+main { padding:20px 24px; overflow-x:auto; }
+.toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+.result-count { font-size:12px; color:var(--muted); }
+.result-count b { color:var(--ink); }
+.btn-csv { padding:6px 12px; background:transparent; border:1px solid var(--border); border-radius:5px; font-family:var(--mono); font-size:11px; color:var(--muted); cursor:pointer; transition:all 0.15s; }
+.btn-csv:hover:not(:disabled) { border-color:var(--ink); color:var(--ink); }
+.btn-csv:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* TABLE */
+.job-table { width:100%; border-collapse:collapse; min-width:800px; }
+.job-table th { text-align:left; font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); padding:0 10px 8px; border-bottom:1px solid var(--border); font-weight:500; white-space:nowrap; }
+.job-row { border-bottom:1px solid var(--border); transition:background 0.1s; animation:fadeIn 0.2s ease both; }
+.job-row.disliked { opacity:0.35; }
+.job-row:hover { background:var(--bg); }
+.job-row td { padding:11px 10px; vertical-align:middle; }
+
+.job-title-text { font-family:var(--display); font-size:13px; font-weight:500; line-height:1.3; }
+.job-company { font-size:11px; color:var(--muted); margin-top:1px; }
+
+.tag { display:inline-block; font-size:10px; padding:2px 7px; border-radius:20px; border:1px solid var(--border); color:var(--muted); white-space:nowrap; }
+.h1b-yes, .h1b-High  { background:var(--pill-green); color:var(--green);  border-color:var(--green); }
+.h1b-no,  .h1b-Low   { background:var(--pill-red);   color:var(--red);    border-color:var(--red); }
+.h1b-unk, .h1b-Unknown, .h1b- { background:var(--pill-amber); color:var(--amber); border-color:var(--amber); }
+
+/* SCORE BAR */
+.score-wrap { display:flex; align-items:center; gap:6px; }
+.score-num { font-family:var(--display); font-size:13px; font-weight:600; width:32px; }
+.score-bar-bg { width:56px; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+.score-bar-fill { height:100%; border-radius:3px; transition:width 0.4s ease; }
+
+/* FEEDBACK */
+.fb-wrap { display:flex; gap:4px; }
+.fb-btn { width:28px; height:28px; border:1px solid var(--border); border-radius:5px; background:transparent; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; transition:all 0.15s; }
+.fb-btn:hover { border-color:var(--ink); background:var(--bg); }
+.fb-btn.active-up   { background:var(--pill-green); border-color:var(--green); }
+.fb-btn.active-down { background:var(--pill-red);   border-color:var(--red); }
+
+/* APPLY */
+.btn-apply { padding:5px 12px; background:var(--ink); color:white; border:none; border-radius:4px; font-family:var(--display); font-size:11px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; transition:opacity 0.15s; }
+.btn-apply:hover { opacity:0.8; }
+
+/* STATES */
+.empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 20px; color:var(--muted); text-align:center; gap:6px; }
+.empty-icon { font-size:28px; margin-bottom:4px; }
+.empty-title { font-family:var(--display); font-size:15px; color:var(--ink); }
+.empty-sub { font-size:11px; max-width:280px; line-height:1.7; }
+.spinner { width:22px; height:22px; border:2px solid var(--border); border-top-color:var(--ink); border-radius:50%; animation:spin 0.7s linear infinite; margin:0 auto 10px; }
+
+/* AI BADGE */
+.ai-badge { display:inline-flex; align-items:center; gap:3px; font-size:10px; padding:1px 6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:20px; }
+
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@media (max-width:768px) { .shell { grid-template-columns:1fr; } aside { border-right:none; border-bottom:1px solid var(--border); } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wordmark">Job<em>Finder</em></div>
+  <div class="usage-bar" id="usage-bar">
+    <span style="font-size:10px;color:var(--muted)">Daily limits:</span>
+    <div class="usage-pill"><span class="source">Remotive</span><span class="counts" id="u-remotive">—</span><div class="bar-wrap"><div class="bar-fill" id="b-remotive" style="width:0%"></div></div></div>
+    <div class="usage-pill"><span class="source">JSearch</span><span class="counts" id="u-jsearch">—</span><div class="bar-wrap"><div class="bar-fill" id="b-jsearch" style="width:0%"></div></div></div>
+    <div class="usage-pill"><span class="source">Adzuna</span><span class="counts" id="u-adzuna">—</span><div class="bar-wrap"><div class="bar-fill" id="b-adzuna" style="width:0%"></div></div></div>
+    <div class="usage-pill"><span class="source">Claude AI</span><span class="counts" id="u-claude">—</span><div class="bar-wrap"><div class="bar-fill" id="b-claude" style="width:0%"></div></div></div>
+  </div>
+</nav>
+
+<div class="shell">
+  <aside>
+    <div>
+      <div class="section-label">Search</div>
+      <label>Keywords</label>
+      <input type="text" id="keywords" value="product owner, product manager, data platform">
+      <label>Exclude</label>
+      <input type="text" id="exclude" value="intern, junior, hardware, mechanical">
+      <label>Location</label>
+      <input type="text" id="location" placeholder="chicago, remote…">
+      <label>Posted Within</label>
+      <select id="hours">
+        <option value="0">Any time</option>
+        <option value="1">Last hour</option>
+        <option value="6">Last 6 hours</option>
+        <option value="24">Last 24 hours</option>
+        <option value="72">Last 3 days</option>
+        <option value="168">Last week</option>
+      </select>
+    </div>
+
+    <div>
+      <div class="section-label">Sources</div>
+      <div class="toggle-row" onclick="toggle('remotive')">
+        <div><div class="toggle-name">Remotive</div><div class="toggle-hint">Free · No key needed</div></div>
+        <div class="switch on" id="sw-remotive"></div>
+      </div>
+      <div class="toggle-row" onclick="toggle('jsearch')">
+        <div><div class="toggle-name">JSearch</div><div class="toggle-hint">LinkedIn + Indeed · ~6/day free</div></div>
+        <div class="switch" id="sw-jsearch"></div>
+      </div>
+      <div class="toggle-row" onclick="toggle('adzuna')">
+        <div><div class="toggle-name">Adzuna</div><div class="toggle-hint">Broad US market · ~16/day free</div></div>
+        <div class="switch" id="sw-adzuna"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Filters & AI</div>
+      <div class="toggle-row" onclick="toggle('h1b')">
+        <div><div class="toggle-name">H1B Likely Only</div><div class="toggle-hint">Hide confirmed no-sponsorship</div></div>
+        <div class="switch" id="sw-h1b"></div>
+      </div>
+      <div class="toggle-row" onclick="toggle('ai')">
+        <div><div class="toggle-name">AI Scoring <span class="ai-badge">✦ Claude</span></div><div class="toggle-hint">H1B + resume match · ~50/day</div></div>
+        <div class="switch" id="sw-ai"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Resume Match</div>
+      <div class="file-zone">
+        <input type="file" accept=".pdf" onchange="uploadResume(this)">
+        <div class="file-zone-text">
+          <strong id="file-label">Upload PDF</strong>
+          Auto-fills keywords · enables AI match scoring
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;color:var(--muted);line-height:1.8;">
+      <div style="font-weight:500;color:var(--ink);margin-bottom:4px;">Daily API Limits</div>
+      Remotive: ∞ free<br>
+      JSearch: ~6 calls/day<br>
+      Adzuna: ~16 calls/day<br>
+      Claude AI: ~50 calls/day<br>
+      <span style="font-size:10px;">👍 feedback re-ranks results each search</span>
+    </div>
+
+    <button class="btn-search" id="search-btn" onclick="search()">Search</button>
+  </aside>
+
+  <main>
+    <div class="toolbar">
+      <div class="result-count" id="count"></div>
+      <button class="btn-csv" id="csv-btn" disabled onclick="downloadCSV()">↓ Export CSV</button>
+    </div>
+    <div id="results">
+      <div class="empty-state">
+        <div class="empty-icon">⌕</div>
+        <div class="empty-title">Ready</div>
+        <div class="empty-sub">Remotive is on by default — no API keys needed to start searching.</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = "http://localhost:8000";
+const state = { remotive:true, jsearch:false, adzuna:false, h1b:false, ai:false };
+let lastParams = null, resumeText = "", currentJobs = [];
+
+function toggle(k) {
+  state[k] = !state[k];
+  document.getElementById(`sw-${k}`).classList.toggle("on", state[k]);
+}
+
+function getParams() {
+  return {
+    keywords:    document.getElementById("keywords").value.split(",").map(s=>s.trim()).filter(Boolean),
+    exclude:     document.getElementById("exclude").value.split(",").map(s=>s.trim()).filter(Boolean),
+    locations:   document.getElementById("location").value.split(",").map(s=>s.trim()).filter(Boolean),
+    sources:     ["remotive","jsearch","adzuna"].filter(k=>state[k]),
+    h1b_only:    state.h1b,
+    use_ai:      state.ai,
+    hours:       parseInt(document.getElementById("hours").value)||0,
+    resume_text: resumeText
+  };
+}
+
+function scoreColor(n) {
+  if (n>=75) return "#1a6b3c";
+  if (n>=50) return "#92400e";
+  return "#aaaaaa";
+}
+
+function h1bClass(v) {
+  const map = {"Yes":"h1b-yes","No":"h1b-no","High":"h1b-High","Low":"h1b-Low","Unknown":"h1b-Unknown","—":"h1b-unk"};
+  return map[v] || "h1b-unk";
+}
+
+function updateUsage(usage, limits) {
+  ["remotive","jsearch","adzuna","claude"].forEach(k => {
+    const used  = usage[k]  || 0;
+    const limit = limits[k] || 999;
+    const pct   = Math.min(100, Math.round((used/limit)*100));
+    const el    = document.getElementById(`u-${k}`);
+    const bar   = document.getElementById(`b-${k}`);
+    if (el)  el.textContent  = limit >= 999 ? "∞" : `${used}/${limit}`;
+    if (bar) { bar.style.width = pct+"%"; bar.className = "bar-fill" + (pct>=90?" full":pct>=60?" warn":""); }
+  });
+}
+
+function renderJobs(jobs) {
+  const el   = document.getElementById("results");
+  const aiOn = state.ai;
+  if (!jobs.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">∅</div><div class="empty-title">No results</div><div class="empty-sub">Try broader keywords, more sources, or a longer time window.</div></div>`;
+    return;
+  }
+  const rows = jobs.map((j,i) => {
+    const score    = j.match || 0;
+    const fb       = j.feedback || "";
+    const disliked = fb === "down";
+    return `
+    <tr class="job-row${disliked?" disliked":""}" id="row-${i}" style="animation-delay:${i*15}ms">
+      <td>
+        <div class="job-title-text">${j.title}</div>
+        <div class="job-company">${j.company}</div>
+      </td>
+      <td><span class="tag">${j.location}</span></td>
+      <td><span class="tag">${j.posted}</span></td>
+      <td><span class="tag">${j.source}</span></td>
+      <td><span class="tag ${h1bClass(j.h1b_friendly)}">${j.h1b_friendly}</span></td>
+      ${aiOn ? `<td><span class="tag ${h1bClass(j.ai_h1b)}">${j.ai_h1b||"—"}</span></td>` : ""}
+      ${aiOn ? `<td>
+        <div class="score-wrap">
+          <span class="score-num" style="color:${scoreColor(score)}">${score||"—"}</span>
+          ${score ? `<div class="score-bar-bg"><div class="score-bar-fill" style="width:${score}%;background:${scoreColor(score)}"></div></div>` : ""}
+        </div>
+      </td>` : ""}
+      <td>
+        <div class="fb-wrap">
+          <button class="fb-btn${fb==="up"?" active-up":""}" title="Good fit" onclick="sendFeedback(${i},'up')">👍</button>
+          <button class="fb-btn${fb==="down"?" active-down":""}" title="Not for me" onclick="sendFeedback(${i},'down')">👎</button>
+        </div>
+      </td>
+      <td><a class="btn-apply" href="${j.url}" target="_blank" rel="noopener">Apply →</a></td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <table class="job-table">
+      <thead><tr>
+        <th>Role</th><th>Location</th><th>Posted</th><th>Source</th><th>H1B</th>
+        ${aiOn ? '<th><span class="ai-badge">✦ AI H1B</span></th>' : ""}
+        ${aiOn ? '<th><span class="ai-badge">✦ Match</span></th>' : ""}
+        <th>Feedback</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function sendFeedback(idx, signal) {
+  const job = currentJobs[idx];
+  if (!job) return;
+
+  // Toggle off if same button clicked again
+  const newSignal = job.feedback === signal ? "" : signal;
+  job.feedback = newSignal;
+
+  if (newSignal) {
+    await fetch(`${API}/feedback`, {
+      method:"POST", mode:"cors",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify({ url:job.url, title:job.title, company:job.company, signal:newSignal })
+    }).catch(()=>{});
+  }
+
+  renderJobs(currentJobs);  // Re-render with updated feedback state
+}
+
+function setLoading(on) {
+  const btn = document.getElementById("search-btn");
+  btn.disabled = on;
+  btn.textContent = on ? "Searching…" : "Search";
+  if (on) document.getElementById("results").innerHTML =
+    `<div class="empty-state"><div class="spinner"></div><div class="empty-sub">Scraping job boards…</div></div>`;
+}
+
+async function search() {
+  lastParams = getParams();
+  setLoading(true);
+  try {
+    const res  = await fetch(`${API}/search`, {
+      method:"POST", mode:"cors",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify(lastParams)
+    });
+    const data = await res.json();
+    currentJobs = data.jobs || [];
+    document.getElementById("count").innerHTML = `<b>${data.count}</b> jobs found`;
+    document.getElementById("csv-btn").disabled = data.count === 0;
+    if (data.usage && data.limits) updateUsage(data.usage, data.limits);
+    renderJobs(currentJobs);
+  } catch {
+    document.getElementById("results").innerHTML =
+      `<div class="empty-state"><div class="empty-icon">⚠</div><div class="empty-title">Backend offline</div><div class="empty-sub">Run: cd backend && uvicorn main:app --reload</div></div>`;
+  }
+  setLoading(false);
+}
+
+async function uploadResume(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById("file-label").textContent = file.name;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res  = await fetch(`${API}/parse-resume`, { method:"POST", mode:"cors", body: form });
+    const data = await res.json();
+    if (data.keywords.length) document.getElementById("keywords").value = data.keywords.join(", ");
+    resumeText = data.resume_text || "";
+  } catch {}
+}
+
+async function downloadCSV() {
+  if (!lastParams) return;
+  const res  = await fetch(`${API}/export`, {
+    method:"POST", mode:"cors",
+    headers:{"Content-Type":"application/json","Accept":"application/json"},
+    body: JSON.stringify(lastParams)
+  });
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  Object.assign(document.createElement("a"), { href:url, download:`jobs_${new Date().toISOString().slice(0,10)}.csv` }).click();
+  URL.revokeObjectURL(url);
+}
+
+// Load usage on page open
+fetch(`${API}/usage`, { mode:"cors" }).then(r=>r.json()).then(d=>updateUsage(d.usage, d.limits)).catch(()=>{});
+</script>
+</body>
+</html>
