@@ -166,6 +166,14 @@ main { padding:20px 24px; overflow-x:auto; }
 
     <div>
       <div class="section-label">Sources</div>
+      <div class="toggle-row" onclick="toggle('ats')">
+        <div><div class="toggle-name">Employer Boards</div><div class="toggle-hint">Greenhouse/Lever/Ashby · free · freshest</div></div>
+        <div class="switch on" id="sw-ats"></div>
+      </div>
+      <div class="toggle-row" onclick="toggle('jobspy')">
+        <div><div class="toggle-name">JobSpy</div><div class="toggle-hint">Indeed/LinkedIn/Google/Zip · free OSS</div></div>
+        <div class="switch on" id="sw-jobspy"></div>
+      </div>
       <div class="toggle-row" onclick="toggle('remotive')">
         <div><div class="toggle-name">Remotive</div><div class="toggle-hint">Free · No key needed</div></div>
         <div class="switch on" id="sw-remotive"></div>
@@ -213,12 +221,24 @@ main { padding:20px 24px; overflow-x:auto; }
     </div>
 
     <button class="btn-search" id="search-btn" onclick="search()">Search</button>
+    <div style="display:flex;gap:6px;margin-top:8px;align-items:stretch">
+      <button class="btn-search" id="agent-btn" onclick="runAgent()" style="background:#1a6b3c;flex:1">✦ Run Agent</button>
+      <select id="agent-hours" title="Recency window" style="font-size:12px;padding:0 6px;border-radius:6px">
+        <option value="24">Daily (24h)</option>
+        <option value="168">Weekly (7 days)</option>
+      </select>
+    </div>
   </aside>
 
   <main>
     <div class="toolbar">
       <div class="result-count" id="count"></div>
-      <button class="btn-csv" id="csv-btn" disabled onclick="downloadCSV()">↓ Export CSV</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn-csv" id="csv-btn" disabled onclick="downloadCSV()">↓ Results CSV</button>
+        <button class="btn-csv" onclick="downloadLeads('csv')">↓ Leads CSV</button>
+        <button class="btn-csv" onclick="downloadLeads('xlsx')">↓ Leads XLSX</button>
+        <button class="btn-csv" onclick="sendToSheet()">→ Google Sheet</button>
+      </div>
     </div>
     <div id="results">
       <div class="empty-state">
@@ -233,7 +253,8 @@ main { padding:20px 24px; overflow-x:auto; }
 <script>
 //const API = "http://localhost:8000";
 const API = "https://jobfinder-backend-9jcf.onrender.com";
-const state = { remotive:true, jsearch:false, adzuna:false, h1b:false, ai:false };
+const state = { remotive:true, jsearch:false, adzuna:false, ats:true, jobspy:true, h1b:false, ai:false };
+let showFit = false;
 let lastParams = null, resumeText = "", currentJobs = [];
 
 function toggle(k) {
@@ -246,7 +267,7 @@ function getParams() {
     keywords:    document.getElementById("keywords").value.split(",").map(s=>s.trim()).filter(Boolean),
     exclude:     document.getElementById("exclude").value.split(",").map(s=>s.trim()).filter(Boolean),
     locations:   document.getElementById("location").value.split(",").map(s=>s.trim()).filter(Boolean),
-    sources:     ["remotive","jsearch","adzuna"].filter(k=>state[k]),
+    sources:     ["ats","jobspy","remotive","jsearch","adzuna"].filter(k=>state[k]),
     h1b_only:    state.h1b,
     use_ai:      state.ai,
     hours:       parseInt(document.getElementById("hours").value)||0,
@@ -279,7 +300,7 @@ function updateUsage(usage, limits) {
 
 function renderJobs(jobs) {
   const el   = document.getElementById("results");
-  const aiOn = state.ai;
+  const aiOn = state.ai || showFit;
   if (!jobs.length) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">∅</div><div class="empty-title">No results</div><div class="empty-sub">Try broader keywords, more sources, or a longer time window.</div></div>`;
     return;
@@ -401,6 +422,51 @@ async function downloadCSV() {
   const url  = URL.createObjectURL(blob);
   Object.assign(document.createElement("a"), { href:url, download:`jobs_${new Date().toISOString().slice(0,10)}.csv` }).click();
   URL.revokeObjectURL(url);
+}
+
+async function runAgent() {
+  const btn = document.getElementById("agent-btn");
+  btn.disabled = true; btn.textContent = "Agent working…";
+  document.getElementById("results").innerHTML =
+    `<div class="empty-state"><div class="spinner"></div><div class="empty-sub">Agent is searching, checking H1B, scoring fit…</div></div>`;
+  try {
+    const res  = await fetch(`${API}/agent/run`, {
+      method:"POST", mode:"cors", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ resume_text: resumeText, hours: parseInt(document.getElementById("agent-hours").value, 10) })
+    });
+    const data = await res.json();
+    showFit = true;
+    currentJobs = (data.leads||[]).map(j => ({...j, h1b_friendly:j.company_h1b, ai_h1b:j.posting_visa, match:j.fit}));
+    const s = data.stats || {};
+    document.getElementById("count").innerHTML =
+      `<b>${currentJobs.length}</b> leads (<b>${data.new_count||0}</b> new) · ${s.scanned||0} scanned · ${data.summary||""}`;
+    renderJobs(currentJobs);
+  } catch {
+    document.getElementById("results").innerHTML = `<div class="empty-state"><div class="empty-icon">⚠</div><div class="empty-title">Agent failed</div></div>`;
+  }
+  btn.disabled = false; btn.textContent = "✦ Run Agent";
+}
+
+async function downloadLeads(fmt) {
+  const res  = await fetch(`${API}/leads?format=${fmt}`, { mode:"cors" });
+  const url  = URL.createObjectURL(await res.blob());
+  Object.assign(document.createElement("a"), { href:url, download:`leads_${new Date().toISOString().slice(0,10)}.${fmt}` }).click();
+  URL.revokeObjectURL(url);
+}
+
+async function sendToSheet() {
+  let id = "";
+  try { id = localStorage.getItem("sheet_id") || ""; } catch {}
+  id = prompt("Google Sheet ID (share the sheet with the service-account email as Editor):", id);
+  if (!id) return;
+  try { localStorage.setItem("sheet_id", id); } catch {}
+  const res  = await fetch(`${API}/export/sheets`, {
+    method:"POST", mode:"cors", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ sheet_id:id, jobs: showFit ? currentJobs : [] })
+  });
+  const d = await res.json();
+  if (d.error) { downloadLeads("xlsx"); console.log("Sheets not configured, downloaded XLSX instead:", d.error); return; }
+  window.open(d.url, "_blank");
 }
 
 // Load usage on page open

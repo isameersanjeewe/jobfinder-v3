@@ -235,7 +235,7 @@ git reset --soft HEAD~1
 
 ```bash
 # Check current status
-cd /Users/sameersanjeevi/Documents/Files/Projects/jobfinder_v3
+cd path/to/jobfinder
 git status
 git log --oneline -5
 ```
@@ -254,7 +254,7 @@ c67c632 Initial commit: JobFinder v3 - Fixed and fully functional
 
 1. **Review the commit**
    ```bash
-   cd /Users/sameersanjeevi/Documents/Files/Projects/jobfinder_v3
+   cd path/to/jobfinder
    git log -1
    git show HEAD --stat
    ```

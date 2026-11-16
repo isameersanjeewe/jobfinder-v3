@@ -6,6 +6,24 @@ __pycache__/
 dist/
 build/
 .env
+*.env
+secrets/
+*service-account*.json
+*-key.json
+backend/rules.local.json.tmp
 *.log
 .pytest_cache/
 .coverage
+
+backend/leads.db
+backend/out/
+.venv/
+logs/
+
+# Personal profile + runtime data: never committed (repo is user-agnostic)
+backend/rules.json
+backend/rules.local.json
+backend/.env
+docs/*.local.md
+CLAUDE.local.md
+.manifest.md5

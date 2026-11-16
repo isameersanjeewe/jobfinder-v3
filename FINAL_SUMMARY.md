@@ -117,7 +117,7 @@
 
 ### Start Backend
 ```bash
-cd /Users/sameersanjeevi/Documents/Files/Projects/jobfinder_v3/backend
+cd path/to/jobfinder/backend
 source venv/bin/activate
 uvicorn main:app --host 127.0.0.1 --port 8000
 ```
@@ -125,7 +125,7 @@ uvicorn main:app --host 127.0.0.1 --port 8000
 ### Open Frontend
 ```bash
 # Open in browser:
-/Users/sameersanjeevi/Documents/Files/Projects/jobfinder_v3/frontend/index.html
+path/to/jobfinder/frontend/index.html
 ```
 
 ### Search for Jobs
@@ -142,7 +142,7 @@ uvicorn main:app --host 127.0.0.1 --port 8000
 
 **Command Used:**
 ```bash
-cd /Users/sameersanjeevi/Documents/Files/Projects/jobfinder_v3
+cd path/to/jobfinder
 git init
 git config user.email "copilot@github.com"
 git config user.name "Copilot"
@@ -160,7 +160,7 @@ git commit -m "Initial commit: JobFinder v3 - Fixed and fully functional"
 
 ### View Commit
 ```bash
-cd /Users/sameersanjeevi/Documents/Files/Projects/jobfinder_v3
+cd path/to/jobfinder
 git log -1 --stat
 git show HEAD
 ```

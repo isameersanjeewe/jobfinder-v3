@@ -13,11 +13,21 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from datetime import date
 import io, pdfplumber, json, os
+try:  # local dev: load backend/.env (never committed). On Render/GitHub Actions, real env vars are used.
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+except ImportError:
+    pass
 
 from scraper_service import fetch_jsearch, fetch_adzuna, fetch_remotive
 from filter_service   import run_filters
 from ai_service       import enrich_jobs_with_ai, apply_feedback_boost
-from export_service   import to_csv
+from export_service   import to_csv, to_xlsx, append_to_sheet
+from free_sources     import fetch_jobspy, fetch_ats
+from rules_service    import load_rules, apply_gate
+from agent_service    import AgentRun
+from fastapi          import Response
+import store
 
 app = FastAPI(title="JobFinder", version="3.0")
 
@@ -40,6 +50,8 @@ DAILY_LIMITS = {
     "jsearch":  6,    # RapidAPI free: 200/month ÷ 30 ≈ 6/day
     "adzuna":   16,   # Adzuna free: 500/month ÷ 30 ≈ 16/day
     "remotive": 999,  # Unlimited
+    "jobspy":   999,  # Free OSS scraper (Indeed/LinkedIn/Google/Zip/Glassdoor)
+    "ats":      999,  # Free public employer boards (Greenhouse/Lever/Ashby)
     "claude":   50,   # Anthropic pay-as-you-go; set your own comfort limit
 }
 
@@ -66,6 +78,23 @@ class SearchParams(BaseModel):
     hours:       int       = 0
     use_ai:      bool      = False
     resume_text: str       = ""
+
+class AgentParams(BaseModel):
+    goal:         str  = ""
+    resume_text:  str  = ""
+    user_id:      str  = "default"
+    min_fit:      int  = 40
+    resume_years: int | None = None
+    hours:        int | None = None   # overrides rules recency_hours (24 daily, 168 weekly)
+
+class SheetExport(BaseModel):
+    sheet_id: str = ""              # falls back to env SHEET_ID
+    tab:      str = "Leads"
+    user_id:  str = "default"
+    since:    str = ""
+    track:    str = ""              # "c2c" for the "C2C Leads" tab, "ft" for FT tabs
+    hot_only: bool = True           # only Hot Leads (score >= 65) go to the Sheet
+    jobs:     list[dict] = []   # optional: export these instead of stored leads
 
 class FeedbackPayload(BaseModel):
     url:      str   # Job URL as unique ID
@@ -100,6 +129,20 @@ def pipeline(params: SearchParams) -> list[dict]:
         if "remotive" in params.sources:
             jobs += fetch_remotive(kws)
             track_usage("remotive")
+    except Exception:
+        pass
+
+    try:
+        if "jobspy" in params.sources:
+            jobs += fetch_jobspy(kws, loc, params.hours or 24)
+            track_usage("jobspy")
+    except Exception:
+        pass
+
+    try:
+        if "ats" in params.sources:
+            jobs += fetch_ats(load_rules()["ats_boards"])
+            track_usage("ats")
     except Exception:
         pass
 
@@ -178,6 +221,47 @@ def export(params: SearchParams):
         )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/agent/run")
+def agent_run(params: AgentParams):
+    """Agentic run: LLM (or deterministic plan) searches, gates, researches H1B, scores, saves."""
+    try:
+        rules = load_rules()
+        if params.hours:
+            rules["profile"]["recency_hours"] = params.hours
+        run = AgentRun(params.resume_text, params.user_id, rules=rules, min_fit=params.min_fit, resume_years=params.resume_years)
+        return JSONResponse(run.run(params.goal))
+    except Exception as e:
+        return JSONResponse({"error": str(e), "leads": []}, status_code=500)
+
+
+@app.get("/leads")
+def leads(user_id: str = "default", since: str = "", track: str = "", format: str = "json"):
+    """All saved leads. format=json | csv | xlsx (xlsx/csv open directly in Google Sheets)."""
+    rows = store.list_leads(user_id, since, track)
+    if format == "csv":
+        return Response(to_csv(rows), media_type="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=leads.csv"})
+    if format == "xlsx":
+        return Response(to_xlsx(rows), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition": "attachment; filename=leads.xlsx"})
+    return {"count": len(rows), "leads": rows}
+
+
+@app.post("/export/sheets")
+def export_sheets(p: SheetExport):
+    """Append leads to the user's Google Sheet (append-only, dedupes by URL)."""
+    try:
+        rows = p.jobs or store.list_leads(p.user_id, p.since, p.track)
+        if p.hot_only:  # docs/CONTEXT.md: only Hot Leads go to the Sheet; the rest stay in the run log
+            rows = [r for r in rows if r.get("hot_lead")]
+        sheet_id = p.sheet_id or os.getenv("SHEET_ID", "")
+        if not sheet_id:
+            raise RuntimeError("sheet_id not given and SHEET_ID not set")
+        return append_to_sheet(rows, sheet_id, p.tab)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 @app.post("/feedback")
