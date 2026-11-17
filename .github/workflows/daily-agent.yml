@@ -20,7 +20,7 @@ jobs:
         with: { python-version: "3.11" }
       - run: pip install -r requirements.txt
       - uses: actions/cache/restore@v4
-        with: { path: backend/leads.db, key: leads-db-${{ github.run_id }}, restore-keys: leads-db- }
+        with: { path: backend/leads.db, key: "leads-db-${{ github.run_id }}", restore-keys: "leads-db-" }
       - run: python run_agent.py --min-fit 40
         env:
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
@@ -34,4 +34,4 @@ jobs:
           RULES_JSON: ${{ secrets.RULES_JSON }}
       - uses: actions/cache/save@v4
         if: always()
-        with: { path: backend/leads.db, key: leads-db-${{ github.run_id }} }
+        with: { path: backend/leads.db, key: "leads-db-${{ github.run_id }}" }
