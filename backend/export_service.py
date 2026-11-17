@@ -17,13 +17,29 @@ FIELDS = ["scraped", "title", "company", "location", "posted", "company_h1b", "p
           "score", "hot_lead", "fit", "missing", "source", "url", "status", "h1b_friendly", "ai_h1b", "match"]
 
 
-def _rows(jobs: list[dict]) -> list[dict]:
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cell(v, safe: bool = True):
+    """Scraped text is untrusted: a title like '=HYPERLINK(...)' or '=IMPORTXML(...)' would run as a formula
+    in Excel/Sheets (CSV/formula injection). Prefix with ' so it stays text."""
+    if safe and isinstance(v, str) and v.startswith(_FORMULA_START):
+        return "'" + v
+    return v
+
+
+def _safe_url(u) -> str:
+    return u if isinstance(u, str) and u.lower().startswith(("https://", "http://")) else ""
+
+
+def _rows(jobs: list[dict], safe: bool = True) -> list[dict]:
     rows = []
     for j in jobs:
         r = {k: j.get(k, "") for k in FIELDS}
         r["missing"] = ", ".join(j.get("missing", [])) if isinstance(j.get("missing"), list) else j.get("missing", "")
         r["status"] = j.get("status") or "Not Applied"
-        rows.append(r)
+        r["url"] = _safe_url(r["url"])
+        rows.append({k: _cell(v, safe) for k, v in r.items()})
     return rows
 
 
@@ -79,7 +95,8 @@ def append_to_sheet(jobs: list[dict], sheet_id: str, tab: str = "Leads") -> dict
     new_rows = [r for r in rows if r[link_col] and r[link_col] not in existing]
     if new_rows:
         # table_range pins appends to column A so rows never shift right of the existing table
-        ws.append_rows(new_rows, value_input_option="USER_ENTERED", table_range="A1")
+        # RAW: values are stored as-is, never parsed as formulas (scraped text is untrusted)
+        ws.append_rows(new_rows, value_input_option="RAW", table_range="A1")
     return {"appended": len(new_rows), "skipped_existing": len(rows) - len(new_rows), "columns": header,
             "url": f"https://docs.google.com/spreadsheets/d/{sheet_id}"}
 
@@ -103,7 +120,7 @@ def _key(h: str) -> str:
 def sheet_rows(jobs: list[dict], header: list[str]) -> list[list]:
     field_for = {_key(h): f for f, names in _ALIASES.items() for h in names}
     out = []
-    for r in _rows(jobs):
+    for r in _rows(jobs, safe=False):  # RAW append: no formula parsing, so no quote prefix needed
         r.setdefault("contact", "")
         out.append([r.get(field_for.get(_key(h)), "") if field_for.get(_key(h)) else "" for h in header])
     return out

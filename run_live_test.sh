@@ -4,7 +4,10 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p logs
 python3 -m venv .venv
-.venv/bin/pip install -q -r backend/requirements.txt -r tests/requirements-dev.txt
+.venv/bin/python -m pip install -q -U pip
+.venv/bin/pip install -q -U -r backend/requirements.txt -r tests/requirements-dev.txt
+echo "== dependency audit ==" | tee logs/09_pip_audit.log
+.venv/bin/pip-audit 2>&1 | tee -a logs/09_pip_audit.log || true
 echo "== offline tests ==" | tee logs/10_live_offline.log
 .venv/bin/python tests/test_agent.py 2>&1 | tee -a logs/10_live_offline.log
 echo "== live smoke test (real job boards) ==" | tee logs/11_live_smoke.log

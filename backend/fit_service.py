@@ -64,10 +64,12 @@ def score_lead(job: dict, rules: dict) -> dict:
     else:
         h1b = 0 if job.get("posting_visa") == "No" else sc["h1b_points"].get(sig, 0)
 
-    primary = [t.lower() for t in rules["profile"]["titles"] if "program" not in t.lower()]
-    if any(t in title for t in primary) or any(t in title for t in ("product manager", "product owner")):
+    secondary = [s.lower() for s in sc.get("secondary_title_terms", [])]
+    # primary = the user's own titles; core_title_terms only widen the gate (they score as stretch)
+    primary = [t.lower() for t in rules["profile"]["titles"] if not any(s in t.lower() for s in secondary)]
+    if any(t in title for t in primary):
         title_pts = 25
-    elif any(t in title for t in sc["secondary_title_terms"]):
+    elif any(t in title for t in secondary):
         title_pts = 15
     elif title_ok(title, rules, include_fallback=True):
         title_pts = 5  # stretch: passes the gate but isn't a core PM/PO/program title

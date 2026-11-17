@@ -1,10 +1,14 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-requests==2.31.0
-pydantic>=2.7.0
-pdfplumber==0.10.3
-python-multipart>=0.0.7
-python-jobspy>=1.1.80
-openpyxl>=3.1
-gspread>=6.0
-python-dotenv>=1.0
+# Minimums are the first versions with no known vulnerabilities (pip-audit, 2026-11-16).
+fastapi>=0.163.1
+starlette>=1.10.0
+uvicorn>=0.54.0
+requests>=2.34.2
+anyio>=4.16.0
+pydantic>=2.14.3
+pdfplumber>=0.11.10
+pdfminer.six>=20251230
+python-multipart>=0.0.34
+python-jobspy>=1.4.1
+openpyxl>=3.1.5
+gspread>=6.2.1
+python-dotenv>=1.2.4

@@ -3,474 +3,629 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src http://localhost:* http://127.0.0.1:* https:; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>JobFinder</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Clash+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #f5f4f0;
-  --ink: #0f0f0d;
-  --muted: #8a8a80;
-  --border: #ddddd5;
-  --surface: #ffffff;
-  --accent: #1a1a2e;
-  --green: #1a6b3c;
-  --red: #b91c1c;
-  --amber: #92400e;
-  --pill-green: #dcfce7;
-  --pill-red: #fee2e2;
-  --pill-amber: #fef3c7;
-  --mono: 'IBM Plex Mono', monospace;
-  --display: 'Clash Display', sans-serif;
+  --bg:#f5f4f0; --ink:#121210; --muted:#7c7c73; --border:#e0dfd8; --surface:#ffffff; --soft:#fafaf7;
+  --green:#17803d; --green-bg:#dcfce7; --red:#b91c1c; --red-bg:#fee2e2; --amber:#a16207; --amber-bg:#fef3c7;
+  --blue:#1d4ed8; --blue-bg:#e0ebff; --hot:#c2410c; --hot-bg:#ffedd5; --agent:#17633a;
+  --mono:'IBM Plex Mono', ui-monospace, monospace; --display:'Space Grotesk', system-ui, sans-serif;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 13px; min-height: 100vh; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#141413; --ink:#ecebe6; --muted:#9a9a90; --border:#2e2e2b; --surface:#1c1c1a; --soft:#222220;
+    --green:#4ade80; --green-bg:#14301f; --red:#f87171; --red-bg:#3a1717; --amber:#fbbf24; --amber-bg:#352a10;
+    --blue:#93b4ff; --blue-bg:#18233d; --hot:#fb923c; --hot-bg:#3a2210; --agent:#1f7a48; }
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+[hidden] { display:none !important; }
+body { background:var(--bg); color:var(--ink); font-family:var(--mono); font-size:13px; min-height:100vh; }
+button, input, select, textarea { font:inherit; color:inherit; }
 
-/* NAV */
-nav { display:flex; align-items:center; justify-content:space-between; padding:16px 28px; border-bottom:1px solid var(--border); background:var(--surface); gap:16px; flex-wrap:wrap; }
+nav { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--surface); gap:14px; flex-wrap:wrap; position:sticky; top:0; z-index:5; }
 .wordmark { font-family:var(--display); font-size:20px; font-weight:700; letter-spacing:-0.5px; }
-.wordmark em { color:var(--muted); font-style:normal; font-weight:400; }
+.wordmark em { color:var(--muted); font-style:normal; font-weight:500; }
+.nav-right { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.conn { font-size:11px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--border); }
+.dot.ok { background:var(--green); } .dot.bad { background:var(--red); }
+.usage-pill { display:flex; align-items:center; gap:5px; font-size:10px; padding:3px 9px; border-radius:20px; border:1px solid var(--border); white-space:nowrap; color:var(--muted); }
+.usage-pill b { color:var(--ink); font-weight:500; }
 
-/* USAGE BAR */
-.usage-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-.usage-pill { display:flex; align-items:center; gap:5px; font-size:10px; padding:4px 10px; border-radius:20px; border:1px solid var(--border); background:var(--surface); white-space:nowrap; }
-.usage-pill .source { color:var(--muted); }
-.usage-pill .counts { font-weight:500; }
-.usage-pill .bar-wrap { width:40px; height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
-.usage-pill .bar-fill { height:100%; border-radius:2px; background:var(--green); transition:width 0.3s; }
-.usage-pill .bar-fill.warn { background:var(--amber); }
-.usage-pill .bar-fill.full { background:var(--red); }
+.shell { display:grid; grid-template-columns:290px minmax(0,1fr); min-height:calc(100vh - 57px); }
+aside { border-right:1px solid var(--border); background:var(--surface); padding:18px; display:flex; flex-direction:column; gap:18px; }
+.card { border:1px solid var(--border); border-radius:8px; padding:14px; background:var(--soft); }
+.card.agent { border-color:var(--agent); }
+.section-label { font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; display:flex; justify-content:space-between; }
+.hint { font-size:11px; color:var(--muted); line-height:1.6; }
 
-/* LAYOUT */
-.shell { display:grid; grid-template-columns:272px 1fr; min-height:calc(100vh - 53px); }
-aside { border-right:1px solid var(--border); background:var(--surface); padding:20px 18px; display:flex; flex-direction:column; gap:22px; overflow-y:auto; }
-.section-label { font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+textarea { resize:vertical; min-height:52px; line-height:1.5; }
+.check { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink); margin:10px 0 0; cursor:pointer; }
+.check input { width:15px; height:15px; accent-color:var(--agent); flex-shrink:0; }
+.badge { font-size:9px; letter-spacing:.06em; padding:1px 7px; border-radius:20px; background:var(--blue-bg); color:var(--blue); text-transform:uppercase; }
+.badge.profile { background:var(--border); color:var(--muted); }
+.btn-row { display:flex; gap:6px; margin-top:12px; }
+.btn-row > * { flex:1; }
+input[type="text"], input[type="password"], select, textarea { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:12px; outline:none; transition:border-color .15s; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline:2px solid var(--blue); outline-offset:1px; }
+label { display:block; font-size:11px; color:var(--muted); margin:10px 0 4px; }
+label:first-of-type { margin-top:0; }
 
-/* FORM */
-input[type="text"], textarea, select { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:8px 11px; font-family:var(--mono); font-size:12px; color:var(--ink); outline:none; transition:border-color 0.15s; }
-input[type="text"]:focus, textarea:focus, select:focus { border-color:var(--ink); }
-label { display:block; font-size:11px; color:var(--muted); margin-bottom:4px; margin-top:10px; }
-label:first-child { margin-top:0; }
-
-/* TOGGLES */
-.toggle-row { display:flex; align-items:center; justify-content:space-between; padding:6px 0; cursor:pointer; border-bottom:1px solid var(--border); }
+.toggle-row { display:flex; align-items:center; justify-content:space-between; width:100%; padding:7px 0; background:none; border:none; border-bottom:1px solid var(--border); cursor:pointer; text-align:left; gap:10px; }
 .toggle-row:last-child { border-bottom:none; }
 .toggle-name { font-size:12px; }
 .toggle-hint { font-size:10px; color:var(--muted); }
-.switch { width:32px; height:17px; background:var(--border); border-radius:9px; position:relative; transition:background 0.15s; flex-shrink:0; }
-.switch.on { background:var(--ink); }
-.switch::after { content:''; position:absolute; width:11px; height:11px; background:white; border-radius:50%; top:3px; left:3px; transition:left 0.15s; }
-.switch.on::after { left:18px; }
+.switch { width:32px; height:18px; background:var(--border); border-radius:9px; position:relative; transition:background .15s; flex-shrink:0; }
+.switch::after { content:''; position:absolute; width:12px; height:12px; background:#fff; border-radius:50%; top:3px; left:3px; transition:left .15s; }
+[aria-pressed="true"] .switch { background:var(--ink); }
+[aria-pressed="true"] .switch::after { left:17px; }
 
-/* FILE ZONE */
-.file-zone { border:1px dashed var(--border); border-radius:5px; padding:12px; text-align:center; cursor:pointer; transition:border-color 0.15s; position:relative; }
+.file-zone { border:1px dashed var(--border); border-radius:6px; padding:12px; text-align:center; cursor:pointer; position:relative; }
 .file-zone:hover { border-color:var(--ink); }
 .file-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; }
-.file-zone-text { font-size:11px; color:var(--muted); }
-.file-zone-text strong { color:var(--ink); display:block; margin-bottom:2px; font-size:12px; }
+.file-zone strong { display:block; font-size:12px; margin-bottom:2px; }
 
-/* BUTTON */
-.btn-search { width:100%; padding:11px; background:var(--ink); color:white; border:none; border-radius:5px; font-family:var(--display); font-size:14px; font-weight:600; cursor:pointer; transition:opacity 0.15s; margin-top:auto; }
-.btn-search:hover { opacity:0.85; }
-.btn-search:disabled { opacity:0.4; cursor:not-allowed; }
+.btn { width:100%; padding:10px; border:none; border-radius:6px; font-family:var(--display); font-size:14px; font-weight:600; cursor:pointer; transition:opacity .15s; background:var(--ink); color:var(--bg); }
+.btn:hover:not(:disabled) { opacity:.88; }
+.btn:disabled { opacity:.45; cursor:not-allowed; }
+.btn.agent { background:var(--agent); color:#fff; }
+.row { display:flex; gap:6px; align-items:stretch; }
+.row > select { width:104px; flex-shrink:0; }
+.row > .btn { flex:1; white-space:nowrap; }
+details summary { cursor:pointer; font-size:11px; color:var(--muted); }
+details[open] summary { margin-bottom:8px; }
 
-/* MAIN */
-main { padding:20px 24px; overflow-x:auto; }
-.toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+main { padding:18px 22px; min-width:0; }
+.toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
 .result-count { font-size:12px; color:var(--muted); }
 .result-count b { color:var(--ink); }
-.btn-csv { padding:6px 12px; background:transparent; border:1px solid var(--border); border-radius:5px; font-family:var(--mono); font-size:11px; color:var(--muted); cursor:pointer; transition:all 0.15s; }
-.btn-csv:hover:not(:disabled) { border-color:var(--ink); color:var(--ink); }
-.btn-csv:disabled { opacity:0.4; cursor:not-allowed; }
+.btn-sm { padding:6px 11px; background:var(--surface); border:1px solid var(--border); border-radius:6px; font-size:11px; color:var(--muted); cursor:pointer; white-space:nowrap; }
+.btn-sm:hover:not(:disabled) { border-color:var(--ink); color:var(--ink); }
+.btn-sm:disabled { opacity:.4; cursor:not-allowed; }
+.btn-sm[aria-pressed="true"] { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+.filters { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+.filters input { width:220px; }
+.chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+.chip { font-size:11px; padding:3px 9px; border-radius:20px; background:var(--surface); border:1px solid var(--border); color:var(--muted); }
+.chip b { color:var(--ink); font-weight:500; }
 
-/* TABLE */
-.job-table { width:100%; border-collapse:collapse; min-width:800px; }
-.job-table th { text-align:left; font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); padding:0 10px 8px; border-bottom:1px solid var(--border); font-weight:500; white-space:nowrap; }
-.job-row { border-bottom:1px solid var(--border); transition:background 0.1s; animation:fadeIn 0.2s ease both; }
-.job-row.disliked { opacity:0.35; }
-.job-row:hover { background:var(--bg); }
-.job-row td { padding:11px 10px; vertical-align:middle; }
+.table-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+.job-table { width:100%; border-collapse:collapse; min-width:720px; }
+.job-table th { text-align:left; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:10px; border-bottom:1px solid var(--border); font-weight:500; white-space:nowrap; background:var(--soft); position:sticky; top:0; }
+.job-table th.sortable { cursor:pointer; }
+.job-row { border-bottom:1px solid var(--border); }
+.job-row:last-child { border-bottom:none; }
+.job-row.disliked { opacity:.4; }
+.job-row:hover { background:var(--soft); }
+.job-row td { padding:10px; vertical-align:middle; }
+.nowrap { white-space:nowrap; }
+.job-title { font-family:var(--display); font-size:13.5px; font-weight:600; line-height:1.3; }
+.job-company { font-size:11px; color:var(--muted); margin-top:2px; }
+.new-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--blue); margin-right:6px; vertical-align:middle; }
 
-.job-title-text { font-family:var(--display); font-size:13px; font-weight:500; line-height:1.3; }
-.job-company { font-size:11px; color:var(--muted); margin-top:1px; }
+.tag { display:inline-block; font-size:10px; padding:2px 8px; border-radius:20px; border:1px solid var(--border); color:var(--muted); white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }
+.t-good { background:var(--green-bg); color:var(--green); border-color:transparent; }
+.t-mid  { background:var(--amber-bg); color:var(--amber); border-color:transparent; }
+.t-bad  { background:var(--red-bg);   color:var(--red);   border-color:transparent; }
+.t-info { background:var(--blue-bg);  color:var(--blue);  border-color:transparent; }
+.t-hot  { background:var(--hot-bg);   color:var(--hot);   border-color:transparent; font-weight:500; }
 
-.tag { display:inline-block; font-size:10px; padding:2px 7px; border-radius:20px; border:1px solid var(--border); color:var(--muted); white-space:nowrap; }
-.h1b-yes, .h1b-High  { background:var(--pill-green); color:var(--green);  border-color:var(--green); }
-.h1b-no,  .h1b-Low   { background:var(--pill-red);   color:var(--red);    border-color:var(--red); }
-.h1b-unk, .h1b-Unknown, .h1b- { background:var(--pill-amber); color:var(--amber); border-color:var(--amber); }
+.score-wrap { display:flex; align-items:center; gap:7px; }
+.score-num { font-family:var(--display); font-size:14px; font-weight:700; width:26px; text-align:right; }
+.bar { width:56px; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+.bar > div { height:100%; border-radius:3px; }
 
-/* SCORE BAR */
-.score-wrap { display:flex; align-items:center; gap:6px; }
-.score-num { font-family:var(--display); font-size:13px; font-weight:600; width:32px; }
-.score-bar-bg { width:56px; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
-.score-bar-fill { height:100%; border-radius:3px; transition:width 0.4s ease; }
+.fb-wrap { display:flex; gap:4px; align-items:center; justify-content:flex-end; }
+.fb-btn { width:28px; height:28px; border:1px solid var(--border); border-radius:6px; background:transparent; cursor:pointer; font-size:12px; }
+.fb-btn:hover { border-color:var(--ink); }
+.fb-btn[aria-pressed="true"].up   { background:var(--green-bg); border-color:var(--green); }
+.fb-btn[aria-pressed="true"].down { background:var(--red-bg);   border-color:var(--red); }
+.btn-apply { padding:5px 12px; background:var(--ink); color:var(--bg); border-radius:5px; font-family:var(--display); font-size:11px; font-weight:600; text-decoration:none; white-space:nowrap; }
+.btn-apply:hover { opacity:.85; }
 
-/* FEEDBACK */
-.fb-wrap { display:flex; gap:4px; }
-.fb-btn { width:28px; height:28px; border:1px solid var(--border); border-radius:5px; background:transparent; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; transition:all 0.15s; }
-.fb-btn:hover { border-color:var(--ink); background:var(--bg); }
-.fb-btn.active-up   { background:var(--pill-green); border-color:var(--green); }
-.fb-btn.active-down { background:var(--pill-red);   border-color:var(--red); }
-
-/* APPLY */
-.btn-apply { padding:5px 12px; background:var(--ink); color:white; border:none; border-radius:4px; font-family:var(--display); font-size:11px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; transition:opacity 0.15s; }
-.btn-apply:hover { opacity:0.8; }
-
-/* STATES */
 .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 20px; color:var(--muted); text-align:center; gap:6px; }
-.empty-icon { font-size:28px; margin-bottom:4px; }
-.empty-title { font-family:var(--display); font-size:15px; color:var(--ink); }
-.empty-sub { font-size:11px; max-width:280px; line-height:1.7; }
-.spinner { width:22px; height:22px; border:2px solid var(--border); border-top-color:var(--ink); border-radius:50%; animation:spin 0.7s linear infinite; margin:0 auto 10px; }
-
-/* AI BADGE */
-.ai-badge { display:inline-flex; align-items:center; gap:3px; font-size:10px; padding:1px 6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:20px; }
-
+.empty-icon { font-size:28px; }
+.empty-title { font-family:var(--display); font-size:16px; font-weight:600; color:var(--ink); }
+.empty-sub { font-size:11px; max-width:340px; line-height:1.7; }
+.spinner { width:24px; height:24px; border:2px solid var(--border); border-top-color:var(--ink); border-radius:50%; animation:spin .7s linear infinite; margin:0 auto 10px; }
 @keyframes spin { to { transform:rotate(360deg); } }
-@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-@media (max-width:768px) { .shell { grid-template-columns:1fr; } aside { border-right:none; border-bottom:1px solid var(--border); } }
+
+#toasts { position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:20; max-width:min(380px, calc(100vw - 32px)); }
+.toast { background:var(--ink); color:var(--bg); padding:10px 14px; border-radius:8px; font-size:12px; line-height:1.5; box-shadow:0 6px 20px rgba(0,0,0,.18); }
+.toast.err { background:var(--red); color:#fff; }
+
+@media (max-width:820px) {
+  .shell { grid-template-columns:minmax(0,1fr); }
+  .usage-pill { display:none; }
+  aside { min-width:0; }
+  aside { border-right:none; border-bottom:1px solid var(--border); }
+  nav, main { padding-left:16px; padding-right:16px; }
+  .filters input { width:100%; }
+}
 </style>
 </head>
 <body>
 
 <nav>
   <div class="wordmark">Job<em>Finder</em></div>
-  <div class="usage-bar" id="usage-bar">
-    <span style="font-size:10px;color:var(--muted)">Daily limits:</span>
-    <div class="usage-pill"><span class="source">Remotive</span><span class="counts" id="u-remotive">—</span><div class="bar-wrap"><div class="bar-fill" id="b-remotive" style="width:0%"></div></div></div>
-    <div class="usage-pill"><span class="source">JSearch</span><span class="counts" id="u-jsearch">—</span><div class="bar-wrap"><div class="bar-fill" id="b-jsearch" style="width:0%"></div></div></div>
-    <div class="usage-pill"><span class="source">Adzuna</span><span class="counts" id="u-adzuna">—</span><div class="bar-wrap"><div class="bar-fill" id="b-adzuna" style="width:0%"></div></div></div>
-    <div class="usage-pill"><span class="source">Claude AI</span><span class="counts" id="u-claude">—</span><div class="bar-wrap"><div class="bar-fill" id="b-claude" style="width:0%"></div></div></div>
+  <div class="nav-right">
+    <div class="usage-pill">JSearch <b id="u-jsearch">—</b></div>
+    <div class="usage-pill">Adzuna <b id="u-adzuna">—</b></div>
+    <div class="usage-pill">Claude <b id="u-claude">—</b></div>
+    <div class="conn" title="Backend connection"><span class="dot" id="conn-dot"></span><span id="conn-text">connecting…</span></div>
   </div>
 </nav>
 
 <div class="shell">
   <aside>
+    <div class="card agent">
+      <div class="section-label"><span>Agent</span><span>recommended</span></div>
+      <p class="hint" style="margin-bottom:10px">Searches your profile's boards, checks H1B sponsorship, scores and saves only new, eligible leads.</p>
+      <div class="row">
+        <button class="btn agent" id="agent-btn" type="button">✦ Run Agent</button>
+        <select id="agent-hours" title="Recency window" aria-label="Recency window">
+          <option value="24">24 hours</option>
+          <option value="168">7 days</option>
+        </select>
+      </div>
+      <p class="hint" id="agent-status" style="margin-top:8px" aria-live="polite"></p>
+    </div>
+
+    <details id="filters-panel">
+      <summary>Search filters <span class="badge profile" id="filters-badge">profile</span></summary>
+      <label for="f-titles">Job titles <span class="hint">(comma-separated)</span></label>
+      <input type="text" id="f-titles" placeholder="Product Manager, Data Engineer…">
+      <label for="f-locations">Locations <span class="hint">(one per line, "City, ST")</span></label>
+      <textarea id="f-locations" rows="2" placeholder="Austin, TX&#10;Seattle, WA"></textarea>
+      <label class="check"><input type="checkbox" id="f-remote"> Include remote (US)</label>
+      <label for="f-visa">Work authorization</label>
+      <select id="f-visa">
+        <option value="new_sponsorship">I need new H-1B sponsorship</option>
+        <option value="h1b_transfer">I already have an H-1B (transfer)</option>
+        <option value="none">No sponsorship needed</option>
+      </select>
+      <label class="check" id="f-sponsors-row"><input type="checkbox" id="f-sponsors"> Only companies that sponsor H-1B</label>
+      <p class="hint" id="f-visa-hint" style="margin-top:6px"></p>
+      <label for="f-industries">Preferred industries <span class="hint">(highest first)</span></label>
+      <input type="text" id="f-industries" placeholder="fintech, healthcare, saas">
+      <label for="f-exclude">Skip companies</label>
+      <input type="text" id="f-exclude" placeholder="comma-separated">
+      <div class="btn-row">
+        <button class="btn-sm" id="f-save" type="button">Save filters</button>
+        <button class="btn-sm" id="f-reset" type="button">Use profile</button>
+      </div>
+      <p class="hint" style="margin-top:6px">Saved only in this browser and sent with each agent run.</p>
+    </details>
+
     <div>
-      <div class="section-label">Search</div>
-      <label>Keywords</label>
-      <input type="text" id="keywords" value="product owner, product manager, data platform">
-      <label>Exclude</label>
+      <div class="section-label">Resume match</div>
+      <div class="file-zone">
+        <input type="file" accept=".pdf,application/pdf" id="resume-input" aria-label="Upload resume PDF">
+        <strong id="file-label">Upload PDF</strong>
+        <span class="hint">Scores keyword fit · max 5 MB</span>
+      </div>
+    </div>
+
+    <details>
+      <summary>Manual search</summary>
+      <label for="keywords">Keywords</label>
+      <input type="text" id="keywords" value="product manager, product owner">
+      <label for="exclude">Exclude</label>
       <input type="text" id="exclude" value="intern, junior, hardware, mechanical">
-      <label>Location</label>
-      <input type="text" id="location" placeholder="chicago, remote…">
-      <label>Posted Within</label>
+      <label for="location">Location</label>
+      <input type="text" id="location" placeholder="city, remote…">
+      <label for="hours">Posted within</label>
       <select id="hours">
         <option value="0">Any time</option>
-        <option value="1">Last hour</option>
-        <option value="6">Last 6 hours</option>
         <option value="24">Last 24 hours</option>
         <option value="72">Last 3 days</option>
         <option value="168">Last week</option>
       </select>
-    </div>
+      <div class="section-label" style="margin-top:14px">Sources</div>
+      <div id="source-toggles"></div>
+      <div class="section-label" style="margin-top:14px">Filters</div>
+      <div id="filter-toggles"></div>
+      <button class="btn" id="search-btn" type="button" style="margin-top:12px">Search</button>
+    </details>
 
-    <div>
-      <div class="section-label">Sources</div>
-      <div class="toggle-row" onclick="toggle('ats')">
-        <div><div class="toggle-name">Employer Boards</div><div class="toggle-hint">Greenhouse/Lever/Ashby · free · freshest</div></div>
-        <div class="switch on" id="sw-ats"></div>
-      </div>
-      <div class="toggle-row" onclick="toggle('jobspy')">
-        <div><div class="toggle-name">JobSpy</div><div class="toggle-hint">Indeed/LinkedIn/Google/Zip · free OSS</div></div>
-        <div class="switch on" id="sw-jobspy"></div>
-      </div>
-      <div class="toggle-row" onclick="toggle('remotive')">
-        <div><div class="toggle-name">Remotive</div><div class="toggle-hint">Free · No key needed</div></div>
-        <div class="switch on" id="sw-remotive"></div>
-      </div>
-      <div class="toggle-row" onclick="toggle('jsearch')">
-        <div><div class="toggle-name">JSearch</div><div class="toggle-hint">LinkedIn + Indeed · ~6/day free</div></div>
-        <div class="switch" id="sw-jsearch"></div>
-      </div>
-      <div class="toggle-row" onclick="toggle('adzuna')">
-        <div><div class="toggle-name">Adzuna</div><div class="toggle-hint">Broad US market · ~16/day free</div></div>
-        <div class="switch" id="sw-adzuna"></div>
-      </div>
-    </div>
-
-    <div>
-      <div class="section-label">Filters & AI</div>
-      <div class="toggle-row" onclick="toggle('h1b')">
-        <div><div class="toggle-name">H1B Likely Only</div><div class="toggle-hint">Hide confirmed no-sponsorship</div></div>
-        <div class="switch" id="sw-h1b"></div>
-      </div>
-      <div class="toggle-row" onclick="toggle('ai')">
-        <div><div class="toggle-name">AI Scoring <span class="ai-badge">✦ Claude</span></div><div class="toggle-hint">H1B + resume match · ~50/day</div></div>
-        <div class="switch" id="sw-ai"></div>
-      </div>
-    </div>
-
-    <div>
-      <div class="section-label">Resume Match</div>
-      <div class="file-zone">
-        <input type="file" accept=".pdf" onchange="uploadResume(this)">
-        <div class="file-zone-text">
-          <strong id="file-label">Upload PDF</strong>
-          Auto-fills keywords · enables AI match scoring
-        </div>
-      </div>
-    </div>
-
-    <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;color:var(--muted);line-height:1.8;">
-      <div style="font-weight:500;color:var(--ink);margin-bottom:4px;">Daily API Limits</div>
-      Remotive: ∞ free<br>
-      JSearch: ~6 calls/day<br>
-      Adzuna: ~16 calls/day<br>
-      Claude AI: ~50 calls/day<br>
-      <span style="font-size:10px;">👍 feedback re-ranks results each search</span>
-    </div>
-
-    <button class="btn-search" id="search-btn" onclick="search()">Search</button>
-    <div style="display:flex;gap:6px;margin-top:8px;align-items:stretch">
-      <button class="btn-search" id="agent-btn" onclick="runAgent()" style="background:#1a6b3c;flex:1">✦ Run Agent</button>
-      <select id="agent-hours" title="Recency window" style="font-size:12px;padding:0 6px;border-radius:6px">
-        <option value="24">Daily (24h)</option>
-        <option value="168">Weekly (7 days)</option>
-      </select>
-    </div>
+    <details>
+      <summary>Connection settings</summary>
+      <label for="api-url">API URL</label>
+      <input type="text" id="api-url" placeholder="auto">
+      <label for="api-token">API token (if the server sets API_TOKEN)</label>
+      <input type="password" id="api-token" autocomplete="off">
+      <button class="btn-sm" id="save-conn" type="button" style="margin-top:8px">Save</button>
+      <p class="hint" style="margin-top:6px">Stored only in this browser.</p>
+    </details>
   </aside>
 
   <main>
     <div class="toolbar">
-      <div class="result-count" id="count"></div>
-      <div style="display:flex;gap:6px">
-        <button class="btn-csv" id="csv-btn" disabled onclick="downloadCSV()">↓ Results CSV</button>
-        <button class="btn-csv" onclick="downloadLeads('csv')">↓ Leads CSV</button>
-        <button class="btn-csv" onclick="downloadLeads('xlsx')">↓ Leads XLSX</button>
-        <button class="btn-csv" onclick="sendToSheet()">→ Google Sheet</button>
+      <div class="result-count" id="count" aria-live="polite"></div>
+      <div class="row" style="flex-wrap:wrap">
+        <button class="btn-sm" id="csv-btn" type="button" disabled>↓ Results CSV</button>
+        <button class="btn-sm" type="button" data-leads="csv">↓ Leads CSV</button>
+        <button class="btn-sm" type="button" data-leads="xlsx">↓ Leads XLSX</button>
+        <button class="btn-sm" id="sheet-btn" type="button">→ Google Sheet</button>
       </div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="filters" id="filters" hidden>
+      <input type="text" id="q" placeholder="Filter by title, company, location…" aria-label="Filter results">
+      <button class="btn-sm" id="f-hot" type="button" aria-pressed="false">🔥 Hot only</button>
+      <button class="btn-sm" id="f-new" type="button" aria-pressed="false">New only</button>
+      <select id="f-track" aria-label="Track" style="width:auto">
+        <option value="">All tracks</option><option value="ft">Full-time</option><option value="c2c">Contract (C2C)</option>
+      </select>
     </div>
     <div id="results">
       <div class="empty-state">
         <div class="empty-icon">⌕</div>
-        <div class="empty-title">Ready</div>
-        <div class="empty-sub">Remotive is on by default — no API keys needed to start searching.</div>
+        <div class="empty-title">Ready when you are</div>
+        <div class="empty-sub">Run the agent for today's eligible leads, or open Manual search for a quick keyword search.</div>
       </div>
     </div>
   </main>
 </div>
+<div id="toasts" aria-live="assertive"></div>
 
 <script>
-//const API = "http://localhost:8000";
-const API = "https://jobfinder-backend-9jcf.onrender.com";
-const state = { remotive:true, jsearch:false, adzuna:false, ats:true, jobspy:true, h1b:false, ai:false };
-let showFit = false;
-let lastParams = null, resumeText = "", currentJobs = [];
+"use strict";
+// ── config: API base is auto-detected (local file / localhost -> local backend), overridable in settings ──
+const DEFAULT_REMOTE = "https://jobfinder-backend-9jcf.onrender.com";
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+  set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch {} },
+};
+function apiBase() {
+  const saved = store.get("api_url");
+  if (saved) return saved.replace(/\/+$/, "");
+  const h = location.hostname;
+  return (location.protocol === "file:" || h === "localhost" || h === "127.0.0.1") ? "http://localhost:8000" : DEFAULT_REMOTE;
+}
+async function api(path, opts = {}) {
+  const headers = Object.assign({ "Accept": "application/json" }, opts.headers || {});
+  const tok = store.get("api_token");
+  if (tok) headers["Authorization"] = `Bearer ${tok}`;
+  const res = await fetch(apiBase() + path, Object.assign({}, opts, { headers, mode: "cors" }));
+  if (res.status === 401) throw new Error("Unauthorized: set the API token in Connection settings.");
+  return res;
+}
+const postJSON = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-function toggle(k) {
-  state[k] = !state[k];
-  document.getElementById(`sw-${k}`).classList.toggle("on", state[k]);
+// ── safety: everything from the network is untrusted text ──
+const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ESC[c]);
+const safeUrl = u => { try { const x = new URL(u); return (x.protocol === "https:" || x.protocol === "http:") ? x.href : ""; } catch { return ""; } };
+const num = v => Number.isFinite(+v) ? +v : 0;
+
+const $ = id => document.getElementById(id);
+function toast(msg, err = false) {
+  const el = document.createElement("div");
+  el.className = "toast" + (err ? " err" : "");
+  el.textContent = msg;
+  $("toasts").appendChild(el);
+  setTimeout(() => el.remove(), err ? 7000 : 4000);
+}
+function empty(icon, title, sub, spinner = false) {
+  $("results").innerHTML = `<div class="empty-state">${spinner ? '<div class="spinner"></div>' : `<div class="empty-icon">${esc(icon)}</div>`}
+    <div class="empty-title">${esc(title)}</div><div class="empty-sub">${esc(sub)}</div></div>`;
+}
+
+// ── state ──
+const state = { ats: true, jobspy: true, remotive: true, jsearch: false, adzuna: false, h1b: false, ai: false };
+const view = { mode: "none", jobs: [], q: "", hot: false, onlyNew: false, track: "", sort: "score" };
+let lastParams = null, resumeText = "";
+
+const SOURCES = [["ats","Employer boards","Greenhouse/Lever/Ashby/Workday"],["jobspy","JobSpy","Indeed/LinkedIn/Glassdoor"],
+                 ["remotive","Remotive","remote only"],["jsearch","JSearch","needs key"],["adzuna","Adzuna","needs key"]];
+const FILTERS = [["h1b","Hide no-sponsorship","posting says no H1B"],["ai","AI scoring","Claude · needs key"]];
+function renderToggles(id, list) {
+  $(id).innerHTML = list.map(([k, name, hint]) => `<button type="button" class="toggle-row" data-toggle="${k}" aria-pressed="${state[k]}">
+      <span><span class="toggle-name">${esc(name)}</span><br><span class="toggle-hint">${esc(hint)}</span></span><span class="switch"></span></button>`).join("");
+}
+renderToggles("source-toggles", SOURCES);
+renderToggles("filter-toggles", FILTERS);
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-toggle]");
+  if (!t) return;
+  const k = t.dataset.toggle; state[k] = !state[k]; t.setAttribute("aria-pressed", state[k]);
+});
+
+// ── rendering ──
+const H1B_CLASS = { Strong: "t-good", Moderate: "t-mid", Risk: "t-bad", Excluded: "t-bad", Unverified: "",
+                    Yes: "t-good", No: "t-bad", Transfer: "t-info", High: "t-good", Low: "t-bad", Unknown: "" };
+const scoreColor = n => n >= 65 ? "var(--green)" : n >= 45 ? "var(--amber)" : "var(--muted)";
+
+function filtered() {
+  const q = view.q.toLowerCase();
+  let jobs = view.jobs.filter(j =>
+    (!q || `${j.title} ${j.company} ${j.location}`.toLowerCase().includes(q)) &&
+    (!view.hot || j.hot_lead) && (!view.onlyNew || j.is_new) && (!view.track || (j.track || "ft") === view.track));
+  if (view.mode === "agent" && view.sort === "posted") jobs = [...jobs].sort((a, b) => String(b.posted).localeCompare(String(a.posted)));
+  return jobs;
+}
+
+function renderJobs() {
+  const jobs = filtered();
+  if (!view.jobs.length) return empty("∅", "No results", view.mode === "agent"
+    ? "Nothing new passed your filters. Try the Weekly window, or check the gate counts above."
+    : "Try broader keywords, more sources, or a longer time window.");
+  if (!jobs.length) return empty("∅", "No matches", "No results match the current filters.");
+  const agent = view.mode === "agent", ai = state.ai;
+  const rows = jobs.map(j => {
+    const i = view.jobs.indexOf(j), url = safeUrl(j.url), fb = j.feedback || "";
+    const score = num(agent ? j.score : j.match);
+    const h1b = agent ? j.company_h1b : j.h1b_friendly;
+    return `<tr class="job-row${fb === "down" ? " disliked" : ""}">
+      ${agent || ai ? `<td><div class="score-wrap"><span class="score-num" style="color:${scoreColor(score)}">${score || "—"}</span>
+        ${score ? `<div class="bar"><div style="width:${Math.min(100, score)}%;background:${scoreColor(score)}"></div></div>` : ""}
+        ${agent && j.hot_lead ? '<span class="tag t-hot">HOT</span>' : ""}</div></td>` : ""}
+      <td><div class="job-title">${j.is_new ? '<span class="new-dot" title="New"></span>' : ""}${esc(j.title)}</div>
+          <div class="job-company">${esc(j.company)}${agent && j.track === "c2c" ? ' <span class="tag t-info">C2C</span>' : ""}</div></td>
+      <td><span class="tag" title="${esc(j.location)}">${esc(j.location)}</span></td>
+      <td><span class="tag ${H1B_CLASS[h1b] || ""}" title="Company sponsorship signal">${esc(h1b || "—")}</span>
+          ${agent && j.posting_visa && j.posting_visa !== "Unknown" ? `<div style="margin-top:4px"><span class="tag ${H1B_CLASS[j.posting_visa] || ""}" title="What the posting says">posting: ${esc(j.posting_visa)}</span></div>` : ""}</td>
+      ${agent ? `<td>${j.fit == null ? '<span class="hint">—</span>' : esc(j.fit)}</td>` : ""}
+      <td class="nowrap"><div>${esc(j.posted)}</div><div class="job-company" title="${esc(j.source)}">${esc(String(j.source || "").replace(/^(ATS|JobSpy)\//, ""))}</div></td>
+      <td><div class="fb-wrap">
+        <button type="button" class="fb-btn up" data-fb="${i}" data-signal="up" aria-pressed="${fb === "up"}" title="Good fit" aria-label="Good fit">👍</button>
+        <button type="button" class="fb-btn down" data-fb="${i}" data-signal="down" aria-pressed="${fb === "down"}" title="Not for me" aria-label="Not for me">👎</button>
+        ${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open →</a>` : ""}</div></td>
+    </tr>`;
+  }).join("");
+  $("results").innerHTML = `<div class="table-wrap"><table class="job-table"><thead><tr>
+      ${agent || ai ? `<th title="0-100: H1B 35 · Title 25 · Geo 15 · Industry 15 · Contact 10">Score</th>` : ""}
+      <th>Role</th><th>Location</th><th title="Company sponsorship signal, and what the posting says">H1B</th>
+      ${agent ? `<th title="Resume keyword fit">Fit</th>` : ""}
+      <th class="${agent ? "sortable" : ""}" data-sort="posted" title="${agent ? "Click to sort by date" : ""}">Posted</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderChips(stats, extra) {
+  const chips = [];
+  if (stats) {
+    chips.push(`<span class="chip">scanned <b>${esc(stats.scanned ?? 0)}</b></span>`);
+    if (stats.duplicates_merged) chips.push(`<span class="chip">duplicates merged <b>${esc(stats.duplicates_merged)}</b></span>`);
+    const g = stats.gates || {};
+    for (const k of ["posting_no_sponsorship", "company_risk", "company_excluded", "company_unverified", "staffing_c2c_only", "stale_or_undated", "geography"])
+      if (g[k]) chips.push(`<span class="chip" title="Filtered out: ${esc(k)}">${esc(k.replace(/_/g, " "))} <b>${esc(g[k])}</b></span>`);
+  }
+  if (extra) chips.unshift(extra);
+  $("chips").innerHTML = chips.join("");
+}
+
+// ── actions ──
+async function sendFeedback(idx, signal) {
+  const job = view.jobs[idx];
+  if (!job) return;
+  job.feedback = job.feedback === signal ? "" : signal;
+  renderJobs();
+  try { await postJSON("/feedback", { url: String(job.url || "").slice(0, 2000), title: String(job.title || "").slice(0, 200),
+                                      company: String(job.company || "").slice(0, 200), signal: job.feedback }); }
+  catch (e) { toast(e.message, true); }
 }
 
 function getParams() {
-  return {
-    keywords:    document.getElementById("keywords").value.split(",").map(s=>s.trim()).filter(Boolean),
-    exclude:     document.getElementById("exclude").value.split(",").map(s=>s.trim()).filter(Boolean),
-    locations:   document.getElementById("location").value.split(",").map(s=>s.trim()).filter(Boolean),
-    sources:     ["ats","jobspy","remotive","jsearch","adzuna"].filter(k=>state[k]),
-    h1b_only:    state.h1b,
-    use_ai:      state.ai,
-    hours:       parseInt(document.getElementById("hours").value)||0,
-    resume_text: resumeText
-  };
-}
-
-function scoreColor(n) {
-  if (n>=75) return "#1a6b3c";
-  if (n>=50) return "#92400e";
-  return "#aaaaaa";
-}
-
-function h1bClass(v) {
-  const map = {"Yes":"h1b-yes","No":"h1b-no","High":"h1b-High","Low":"h1b-Low","Unknown":"h1b-Unknown","—":"h1b-unk"};
-  return map[v] || "h1b-unk";
-}
-
-function updateUsage(usage, limits) {
-  ["remotive","jsearch","adzuna","claude"].forEach(k => {
-    const used  = usage[k]  || 0;
-    const limit = limits[k] || 999;
-    const pct   = Math.min(100, Math.round((used/limit)*100));
-    const el    = document.getElementById(`u-${k}`);
-    const bar   = document.getElementById(`b-${k}`);
-    if (el)  el.textContent  = limit >= 999 ? "∞" : `${used}/${limit}`;
-    if (bar) { bar.style.width = pct+"%"; bar.className = "bar-fill" + (pct>=90?" full":pct>=60?" warn":""); }
-  });
-}
-
-function renderJobs(jobs) {
-  const el   = document.getElementById("results");
-  const aiOn = state.ai || showFit;
-  if (!jobs.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">∅</div><div class="empty-title">No results</div><div class="empty-sub">Try broader keywords, more sources, or a longer time window.</div></div>`;
-    return;
-  }
-  const rows = jobs.map((j,i) => {
-    const score    = j.match || 0;
-    const fb       = j.feedback || "";
-    const disliked = fb === "down";
-    return `
-    <tr class="job-row${disliked?" disliked":""}" id="row-${i}" style="animation-delay:${i*15}ms">
-      <td>
-        <div class="job-title-text">${j.title}</div>
-        <div class="job-company">${j.company}</div>
-      </td>
-      <td><span class="tag">${j.location}</span></td>
-      <td><span class="tag">${j.posted}</span></td>
-      <td><span class="tag">${j.source}</span></td>
-      <td><span class="tag ${h1bClass(j.h1b_friendly)}">${j.h1b_friendly}</span></td>
-      ${aiOn ? `<td><span class="tag ${h1bClass(j.ai_h1b)}">${j.ai_h1b||"—"}</span></td>` : ""}
-      ${aiOn ? `<td>
-        <div class="score-wrap">
-          <span class="score-num" style="color:${scoreColor(score)}">${score||"—"}</span>
-          ${score ? `<div class="score-bar-bg"><div class="score-bar-fill" style="width:${score}%;background:${scoreColor(score)}"></div></div>` : ""}
-        </div>
-      </td>` : ""}
-      <td>
-        <div class="fb-wrap">
-          <button class="fb-btn${fb==="up"?" active-up":""}" title="Good fit" onclick="sendFeedback(${i},'up')">👍</button>
-          <button class="fb-btn${fb==="down"?" active-down":""}" title="Not for me" onclick="sendFeedback(${i},'down')">👎</button>
-        </div>
-      </td>
-      <td><a class="btn-apply" href="${j.url}" target="_blank" rel="noopener">Apply →</a></td>
-    </tr>`;
-  }).join("");
-
-  el.innerHTML = `
-    <table class="job-table">
-      <thead><tr>
-        <th>Role</th><th>Location</th><th>Posted</th><th>Source</th><th>H1B</th>
-        ${aiOn ? '<th><span class="ai-badge">✦ AI H1B</span></th>' : ""}
-        ${aiOn ? '<th><span class="ai-badge">✦ Match</span></th>' : ""}
-        <th>Feedback</th><th></th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
-async function sendFeedback(idx, signal) {
-  const job = currentJobs[idx];
-  if (!job) return;
-
-  // Toggle off if same button clicked again
-  const newSignal = job.feedback === signal ? "" : signal;
-  job.feedback = newSignal;
-
-  if (newSignal) {
-    await fetch(`${API}/feedback`, {
-      method:"POST", mode:"cors",
-      headers:{"Content-Type":"application/json","Accept":"application/json"},
-      body: JSON.stringify({ url:job.url, title:job.title, company:job.company, signal:newSignal })
-    }).catch(()=>{});
-  }
-
-  renderJobs(currentJobs);  // Re-render with updated feedback state
-}
-
-function setLoading(on) {
-  const btn = document.getElementById("search-btn");
-  btn.disabled = on;
-  btn.textContent = on ? "Searching…" : "Search";
-  if (on) document.getElementById("results").innerHTML =
-    `<div class="empty-state"><div class="spinner"></div><div class="empty-sub">Scraping job boards…</div></div>`;
+  const list = id => $(id).value.split(",").map(s => s.trim()).filter(Boolean);
+  return { keywords: list("keywords").slice(0, 10), exclude: list("exclude").slice(0, 30), locations: list("location").slice(0, 5),
+    sources: ["ats","jobspy","remotive","jsearch","adzuna"].filter(k => state[k]), h1b_only: state.h1b, use_ai: state.ai,
+    hours: parseInt($("hours").value, 10) || 0, resume_text: resumeText };
 }
 
 async function search() {
   lastParams = getParams();
-  setLoading(true);
+  if (!lastParams.sources.length) return toast("Turn on at least one source.", true);
+  const btn = $("search-btn"); btn.disabled = true; btn.textContent = "Searching…";
+  empty("", "Searching job boards…", "This can take a minute when JobSpy is on.", true);
   try {
-    const res  = await fetch(`${API}/search`, {
-      method:"POST", mode:"cors",
-      headers:{"Content-Type":"application/json","Accept":"application/json"},
-      body: JSON.stringify(lastParams)
-    });
-    const data = await res.json();
-    currentJobs = data.jobs || [];
-    document.getElementById("count").innerHTML = `<b>${data.count}</b> jobs found`;
-    document.getElementById("csv-btn").disabled = data.count === 0;
+    const res = await postJSON("/search", lastParams), data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.detail?.[0]?.msg || `HTTP ${res.status}`);
+    view.mode = "search"; view.jobs = data.jobs || [];
+    $("count").innerHTML = `<b>${esc(data.count)}</b> jobs found`;
+    $("csv-btn").disabled = !view.jobs.length; $("filters").hidden = !view.jobs.length;
     if (data.usage && data.limits) updateUsage(data.usage, data.limits);
-    renderJobs(currentJobs);
-  } catch {
-    document.getElementById("results").innerHTML =
-      `<div class="empty-state"><div class="empty-icon">⚠</div><div class="empty-title">Backend offline</div><div class="empty-sub">Run: cd backend && uvicorn main:app --reload</div></div>`;
+    renderChips(null); renderJobs();
+  } catch (e) { empty("⚠", "Search failed", e.message); toast(e.message, true); }
+  btn.disabled = false; btn.textContent = "Search";
+}
+
+function showAgentResult(data) {
+  view.mode = "agent";
+  view.jobs = (data.leads || []).map(j => ({ ...j }));
+  const hot = view.jobs.filter(j => j.hot_lead).length;
+  $("count").innerHTML = `<b>${view.jobs.length}</b> leads · <b>${esc(data.new_count || 0)}</b> new · <b>${hot}</b> hot`;
+  $("filters").hidden = !view.jobs.length;
+  renderChips(data.stats, data.summary ? `<span class="chip" title="${esc(data.summary)}">${esc(String(data.summary).slice(0, 90))}</span>` : "");
+  renderJobs();
+}
+
+async function runAgent() {
+  const btn = $("agent-btn"), status = $("agent-status");
+  btn.disabled = true; btn.textContent = "Agent working…";
+  const body = { resume_text: resumeText, hours: parseInt($("agent-hours").value, 10) };
+  const f = savedFilters();
+  if (f) body.filters = f;
+  empty("", "Agent is running", "Searching boards, checking H1B sponsorship, scoring and saving new leads. Large runs take several minutes.", true);
+  const t0 = Date.now(), tick = setInterval(() => { status.textContent = `Running… ${Math.round((Date.now() - t0) / 1000)}s`; }, 1000);
+  try {
+    let res = await postJSON("/agent/start", body), data = await res.json();
+    if (res.status === 404) {                       // older backend: synchronous endpoint
+      res = await postJSON("/agent/run", body); data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      showAgentResult(data);
+    } else {
+      if (res.status === 429 && data.job_id) toast("A run is already in progress; showing it when it finishes.");
+      else if (!res.ok) throw new Error(data.error || data.detail?.[0]?.msg || `HTTP ${res.status}`);
+      const id = data.job_id;
+      for (;;) {
+        await new Promise(r => setTimeout(r, 4000));
+        const s = await (await api(`/agent/jobs/${encodeURIComponent(id)}`)).json();
+        if (s.status === "running") continue;
+        if (s.status !== "done") throw new Error(s.result?.error || "Agent run failed");
+        showAgentResult(s.result); break;
+      }
+    }
+    status.textContent = `Done in ${Math.round((Date.now() - t0) / 1000)}s`;
+    toast(`Agent finished: ${view.jobs.length} leads.`);
+  } catch (e) {
+    empty("⚠", "Agent failed", e.message); status.textContent = ""; toast(e.message, true);
+  } finally {
+    clearInterval(tick); btn.disabled = false; btn.textContent = "✦ Run Agent";
   }
-  setLoading(false);
 }
 
 async function uploadResume(input) {
   const file = input.files[0];
   if (!file) return;
-  document.getElementById("file-label").textContent = file.name;
-  const form = new FormData();
-  form.append("file", file);
+  if (file.size > 5 * 1024 * 1024) return toast("Resume is larger than 5 MB.", true);
+  $("file-label").textContent = file.name;
+  const form = new FormData(); form.append("file", file);
   try {
-    const res  = await fetch(`${API}/parse-resume`, { method:"POST", mode:"cors", body: form });
-    const data = await res.json();
-    if (data.keywords.length) document.getElementById("keywords").value = data.keywords.join(", ");
+    const res = await api("/parse-resume", { method: "POST", body: form }), data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if ((data.keywords || []).length) $("keywords").value = data.keywords.join(", ");
     resumeText = data.resume_text || "";
-  } catch {}
+    toast("Resume loaded: fit scores will use it.");
+  } catch (e) { $("file-label").textContent = "Upload PDF"; toast(e.message, true); }
 }
 
+async function download(res, name) {
+  if (!res.ok) { let m = `HTTP ${res.status}`; try { m = (await res.json()).error || m; } catch {} throw new Error(m); }
+  const url = URL.createObjectURL(await res.blob());
+  Object.assign(document.createElement("a"), { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const stamp = () => new Date().toISOString().slice(0, 10);
 async function downloadCSV() {
   if (!lastParams) return;
-  const res  = await fetch(`${API}/export`, {
-    method:"POST", mode:"cors",
-    headers:{"Content-Type":"application/json","Accept":"application/json"},
-    body: JSON.stringify(lastParams)
-  });
-  const blob = await res.blob();
-  const url  = URL.createObjectURL(blob);
-  Object.assign(document.createElement("a"), { href:url, download:`jobs_${new Date().toISOString().slice(0,10)}.csv` }).click();
-  URL.revokeObjectURL(url);
+  try { await download(await postJSON("/export", lastParams), `jobs_${stamp()}.csv`); } catch (e) { toast(e.message, true); }
 }
-
-async function runAgent() {
-  const btn = document.getElementById("agent-btn");
-  btn.disabled = true; btn.textContent = "Agent working…";
-  document.getElementById("results").innerHTML =
-    `<div class="empty-state"><div class="spinner"></div><div class="empty-sub">Agent is searching, checking H1B, scoring fit…</div></div>`;
-  try {
-    const res  = await fetch(`${API}/agent/run`, {
-      method:"POST", mode:"cors", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ resume_text: resumeText, hours: parseInt(document.getElementById("agent-hours").value, 10) })
-    });
-    const data = await res.json();
-    showFit = true;
-    currentJobs = (data.leads||[]).map(j => ({...j, h1b_friendly:j.company_h1b, ai_h1b:j.posting_visa, match:j.fit}));
-    const s = data.stats || {};
-    document.getElementById("count").innerHTML =
-      `<b>${currentJobs.length}</b> leads (<b>${data.new_count||0}</b> new) · ${s.scanned||0} scanned · ${data.summary||""}`;
-    renderJobs(currentJobs);
-  } catch {
-    document.getElementById("results").innerHTML = `<div class="empty-state"><div class="empty-icon">⚠</div><div class="empty-title">Agent failed</div></div>`;
-  }
-  btn.disabled = false; btn.textContent = "✦ Run Agent";
-}
-
 async function downloadLeads(fmt) {
-  const res  = await fetch(`${API}/leads?format=${fmt}`, { mode:"cors" });
-  const url  = URL.createObjectURL(await res.blob());
-  Object.assign(document.createElement("a"), { href:url, download:`leads_${new Date().toISOString().slice(0,10)}.${fmt}` }).click();
-  URL.revokeObjectURL(url);
+  try { await download(await api(`/leads?format=${fmt === "xlsx" ? "xlsx" : "csv"}`), `leads_${stamp()}.${fmt}`); }
+  catch (e) { toast(e.message, true); }
 }
-
 async function sendToSheet() {
-  let id = "";
-  try { id = localStorage.getItem("sheet_id") || ""; } catch {}
-  id = prompt("Google Sheet ID (share the sheet with the service-account email as Editor):", id);
-  if (!id) return;
-  try { localStorage.setItem("sheet_id", id); } catch {}
-  const res  = await fetch(`${API}/export/sheets`, {
-    method:"POST", mode:"cors", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ sheet_id:id, jobs: showFit ? currentJobs : [] })
-  });
-  const d = await res.json();
-  if (d.error) { downloadLeads("xlsx"); console.log("Sheets not configured, downloaded XLSX instead:", d.error); return; }
-  window.open(d.url, "_blank");
+  let id = prompt("Google Sheet ID (leave blank to use the server's SHEET_ID).\nShare the sheet with the service-account email as Editor.", store.get("sheet_id"));
+  if (id === null) return;
+  id = id.trim();
+  if (id && !/^[A-Za-z0-9_-]{10,100}$/.test(id)) return toast("That doesn't look like a Sheet ID (the long code in the sheet URL).", true);
+  store.set("sheet_id", id);
+  try {
+    const res = await postJSON("/export/sheets", { sheet_id: id, jobs: view.mode === "agent" ? view.jobs : [] }), d = await res.json();
+    if (!res.ok || d.error) throw new Error(d.error || `HTTP ${res.status}`);
+    toast(`Sheet updated: ${d.appended} added, ${d.skipped_existing} already there (Hot Leads only).`);
+    const u = safeUrl(d.url); if (u) window.open(u, "_blank", "noopener");
+  } catch (e) { toast(`Sheets: ${e.message}`, true); }
 }
 
-// Load usage on page open
-fetch(`${API}/usage`, { mode:"cors" }).then(r=>r.json()).then(d=>updateUsage(d.usage, d.limits)).catch(()=>{});
+function updateUsage(usage, limits) {
+  for (const k of ["jsearch", "adzuna", "claude"]) {
+    const el = $(`u-${k}`); if (!el) continue;
+    const lim = num(limits[k]); el.textContent = lim >= 999 ? "∞" : `${num(usage[k])}/${lim}`;
+  }
+}
+async function checkConnection() {
+  const dot = $("conn-dot"), txt = $("conn-text");
+  try {
+    const r = await fetch(apiBase() + "/health", { mode: "cors" });
+    if (!r.ok) throw 0;
+    dot.className = "dot ok"; txt.textContent = new URL(apiBase()).host;
+    api("/usage").then(r => r.json()).then(d => d.usage && updateUsage(d.usage, d.limits)).catch(() => {});
+  } catch { dot.className = "dot bad"; txt.textContent = "backend offline"; }
+}
+
+// ── search filters: per-browser overrides of the server profile ──
+const VISA_HINT = {
+  new_sponsorship: "Hides postings that refuse sponsorship or require citizenship/clearance.",
+  h1b_transfer: "Also keeps postings that refuse new sponsorship but accept H-1B transfers.",
+  none: "No visa checks: every company and posting is eligible.",
+};
+const splitList = (s, sep = ",") => s.split(sep).map(x => x.trim()).filter(Boolean);
+function savedFilters() { try { return JSON.parse(store.get("filters") || "null"); } catch { return null; } }
+function fillFilters(f) {
+  $("f-titles").value = (f.titles || []).join(", ");
+  $("f-locations").value = (f.locations || []).join("\n");
+  $("f-remote").checked = !!f.remote_ok;
+  $("f-visa").value = VISA_HINT[f.visa] ? f.visa : "new_sponsorship";
+  $("f-sponsors").checked = f.sponsors_only !== false;
+  $("f-industries").value = (f.industries || []).join(", ");
+  $("f-exclude").value = (f.exclude_companies || []).join(", ");
+  syncVisa();
+}
+function syncVisa() {
+  const v = $("f-visa").value;
+  $("f-sponsors-row").hidden = v === "none";
+  $("f-visa-hint").textContent = VISA_HINT[v] || "";
+}
+function readFilters() {
+  return {
+    titles: splitList($("f-titles").value).slice(0, 15).map(s => s.slice(0, 80)),
+    locations: splitList($("f-locations").value, "\n").slice(0, 8).map(s => s.slice(0, 80)),
+    remote_ok: $("f-remote").checked,
+    visa: $("f-visa").value,
+    sponsors_only: $("f-sponsors").checked,
+    industries: splitList($("f-industries").value).slice(0, 10).map(s => s.slice(0, 80)),
+    exclude_companies: splitList($("f-exclude").value).slice(0, 100).map(s => s.slice(0, 80)),
+  };
+}
+function markFilters() {
+  const custom = !!savedFilters(), b = $("filters-badge");
+  b.textContent = custom ? "custom" : "profile"; b.className = "badge" + (custom ? "" : " profile");
+}
+async function loadProfileFilters() {
+  try { const r = await api("/profile/filters"); if (r.ok) return await r.json(); } catch {}
+  return null;
+}
+async function initFilters() {
+  const saved = savedFilters();
+  if (saved) fillFilters(saved); else { const p = await loadProfileFilters(); if (p) fillFilters(p); }
+  markFilters();
+}
+$("f-visa").addEventListener("change", syncVisa);
+$("f-save").addEventListener("click", () => {
+  const f = readFilters();
+  if (!f.titles.length) return toast("Add at least one job title.", true);
+  store.set("filters", JSON.stringify(f)); markFilters();
+  toast("Filters saved. The next agent run uses them.");
+});
+$("f-reset").addEventListener("click", async () => {
+  store.set("filters", ""); markFilters();
+  const p = await loadProfileFilters();
+  if (p) fillFilters(p);
+  toast("Using the server profile again.");
+});
+
+// ── wiring ──
+$("agent-btn").addEventListener("click", runAgent);
+$("search-btn").addEventListener("click", search);
+$("csv-btn").addEventListener("click", downloadCSV);
+$("sheet-btn").addEventListener("click", sendToSheet);
+document.querySelectorAll("[data-leads]").forEach(b => b.addEventListener("click", () => downloadLeads(b.dataset.leads)));
+$("resume-input").addEventListener("change", e => uploadResume(e.target));
+["keywords", "exclude", "location"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter") search(); }));
+$("q").addEventListener("input", e => { view.q = e.target.value; renderJobs(); });
+$("f-track").addEventListener("change", e => { view.track = e.target.value; renderJobs(); });
+for (const [id, key] of [["f-hot", "hot"], ["f-new", "onlyNew"]])
+  $(id).addEventListener("click", e => { view[key] = !view[key]; e.currentTarget.setAttribute("aria-pressed", view[key]); renderJobs(); });
+$("results").addEventListener("click", e => {
+  const fb = e.target.closest("[data-fb]");
+  if (fb) return sendFeedback(+fb.dataset.fb, fb.dataset.signal);
+  const th = e.target.closest("th[data-sort]");
+  if (th && view.mode === "agent") { view.sort = view.sort === "posted" ? "score" : "posted"; renderJobs(); }
+});
+$("api-url").value = store.get("api_url"); $("api-url").placeholder = apiBase();
+$("api-token").value = store.get("api_token");
+$("save-conn").addEventListener("click", () => {
+  const u = $("api-url").value.trim();
+  if (u && !safeUrl(u)) return toast("API URL must start with http:// or https://", true);
+  store.set("api_url", u); store.set("api_token", $("api-token").value.trim());
+  toast("Connection saved."); checkConnection(); if (!savedFilters()) initFilters();
+});
+checkConnection();
+initFilters();
 </script>
 </body>
 </html>

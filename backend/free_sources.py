@@ -16,7 +16,10 @@ UA = {"User-Agent": "Mozilla/5.0 (jobfinder-v4; personal job search)"}
 
 
 def _strip_html(s: str) -> str:
-    return re.sub(r"<[^>]+>", " ", html.unescape(s or ""))
+    # Greenhouse content is double-escaped (&lt;p&gt;...&amp;nbsp;): unescape, strip tags, unescape again,
+    # and turn non-breaking spaces into spaces so "unable to&nbsp;sponsor" still matches the visa gate.
+    text = html.unescape(re.sub(r"<[^>]+>", " ", html.unescape(s or "")))
+    return text.replace("\xa0", " ")
 
 
 JOBSPY_TIMEOUT = int(os.getenv("JOBSPY_TIMEOUT", "120"))  # seconds per scrape_jobs call
@@ -167,12 +170,12 @@ def _wd_call(method: str, url: str, **kw):
 _WD_LOCK = threading.Lock()  # Workday's 429 limit is shared across tenants on one IP: one board at a time
 
 
-def _workday(tenant: str, site: str, company: str) -> list[dict]:
+def _workday(tenant: str, site: str, company: str, queries: list[str] | None = None) -> list[dict]:
     with _WD_LOCK:
-        return _workday_unlocked(tenant, site, company)
+        return _workday_unlocked(tenant, site, company, queries or WORKDAY_QUERIES)
 
 
-def _workday_unlocked(tenant: str, site: str, company: str) -> list[dict]:
+def _workday_unlocked(tenant: str, site: str, company: str, queries: list[str] | None = None) -> list[dict]:
     """Public Workday jobs API. tenant = '<name>.wd<N>' (e.g. 'crowdstrike.wd5'), site = career site id.
     List search (POST .../jobs, 20/page) -> detail GET for fresh PM-family titles: canonical startDate,
     all locations, remoteType, description. Skips postings whose application endDate has passed."""
@@ -182,13 +185,17 @@ def _workday_unlocked(tenant: str, site: str, company: str) -> list[dict]:
     api = f"{host}/wday/cxs/{tenant.split('.')[0]}/{site}"
     hdr = {**UA, "Accept": "application/json", "Content-Type": "application/json"}
     listing = {}
-    for q in WORKDAY_QUERIES:
+    queries = [q.lower() for q in (queries or WORKDAY_QUERIES)]
+    # Workday search is fuzzy: keep only listings whose title contains one of the searched phrases
+    # (or, for a phrase like "product manager", its distinctive first word, e.g. "Group Product Lead")
+    hit = re.compile("|".join(re.escape(q.split()[0] if len(q.split()) > 1 else q) for q in queries), re.I)
+    for q in queries:
         for offset in range(0, 100, 20):
             page = _wd_call("POST", f"{api}/jobs", headers=hdr,
                             json={"appliedFacets": {}, "limit": 20, "offset": offset, "searchText": q}).get("jobPostings", [])
-            hits = [x for x in page if x.get("externalPath") and re.search(r"product|program", x.get("title", ""), re.I)]
+            hits = [x for x in page if x.get("externalPath") and hit.search(x.get("title", ""))]
             listing.update((x["externalPath"], x) for x in hits)
-            if len(page) < 20:  # don't stop on a page with no hits: some tenants (J&J) rank poorly
+            if len(page) < 20:  # don't stop on a page with no hits: some large tenants rank poorly
                 break
             time.sleep(0.4)  # stay under Workday's per-IP burst limit
 
@@ -218,14 +225,16 @@ def _workday_unlocked(tenant: str, site: str, company: str) -> list[dict]:
 
 
 ATS_FETCHERS = {"greenhouse": _greenhouse, "lever": _lever, "ashby": _ashby,
-                "workday": lambda slug, company: _workday(*slug.split("/", 1), company)}  # slug = "tenant.wdN/site"
+                "workday": lambda slug, company, queries=None: _workday(*slug.split("/", 1), company, queries)}  # slug = "tenant.wdN/site"
 
 
-def fetch_company_board(company: str, ats: str | None, slug: str) -> list[dict]:
-    """Fetch one employer board. ats=None -> try each ATS until one answers."""
+def fetch_company_board(company: str, ats: str | None, slug: str, queries: list[str] | None = None) -> list[dict]:
+    """Fetch one employer board. ats=None -> try each ATS until one answers.
+    queries: title phrases for boards that need a search (Workday); the others return every job."""
     for name in ([ats] if ats else list(ATS_FETCHERS)):
         try:
-            jobs = ATS_FETCHERS[name](slug, company.title())
+            fn = ATS_FETCHERS[name]
+            jobs = fn(slug, company.title(), queries) if name == "workday" else fn(slug, company.title())
             if jobs or ats:
                 return jobs
         except Exception:
@@ -233,11 +242,11 @@ def fetch_company_board(company: str, ats: str | None, slug: str) -> list[dict]:
     return []
 
 
-def fetch_ats(boards: dict, companies: list[str] | None = None) -> list[dict]:
+def fetch_ats(boards: dict, companies: list[str] | None = None, queries: list[str] | None = None) -> list[dict]:
     """Fetch all configured employer boards in parallel. boards = rules['ats_boards']."""
     items = [(c, v) for c, v in boards.items() if not c.startswith("_") and (not companies or c in companies)]
     jobs = []
     with ThreadPoolExecutor(max_workers=8) as ex:
-        for res in ex.map(lambda cv: fetch_company_board(cv[0], cv[1].get("ats"), cv[1]["slug"]), items):
+        for res in ex.map(lambda cv: fetch_company_board(cv[0], cv[1].get("ats"), cv[1]["slug"], queries), items):
             jobs += res
     return jobs

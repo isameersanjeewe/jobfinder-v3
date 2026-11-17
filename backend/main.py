@@ -7,12 +7,13 @@
 #   POST /feedback     → thumbs up/down per job, adjusts future scoring
 #   GET  /usage        → daily API call counter per source
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Annotated, Literal
 from datetime import date
-import io, pdfplumber, json, os
+import io, pdfplumber, json, os, hmac, logging, threading, time, uuid
 try:  # local dev: load backend/.env (never committed). On Render/GitHub Actions, real env vars are used.
     from dotenv import load_dotenv
     load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
@@ -24,20 +25,49 @@ from filter_service   import run_filters
 from ai_service       import enrich_jobs_with_ai, apply_feedback_boost
 from export_service   import to_csv, to_xlsx, append_to_sheet
 from free_sources     import fetch_jobspy, fetch_ats
-from rules_service    import load_rules, apply_gate
+from rules_service    import load_rules, apply_gate, apply_filters, profile_filters
 from agent_service    import AgentRun
 from fastapi          import Response
 import store
 
-app = FastAPI(title="JobFinder", version="3.0")
+log = logging.getLogger("jobfinder")
+app = FastAPI(title="JobFinder", version="4.0", docs_url=None if os.getenv("API_TOKEN") else "/docs", redoc_url=None)
+
+# ── SECURITY ──────────────────────────────────────────────────────────────────
+# API_TOKEN set  -> every endpoint except / and /health needs "Authorization: Bearer <token>".
+# API_TOKEN unset -> open (local dev only). A public deployment MUST set it: otherwise anyone can
+# start long scraping runs, read saved leads, or append rows to your Sheet with the server's credentials.
+API_TOKEN = os.getenv("API_TOKEN", "")
+PUBLIC_PATHS = {"/", "/health"}
+if not API_TOKEN:
+    log.warning("API_TOKEN not set: API is unauthenticated (fine for localhost, unsafe when deployed)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()],
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Accept", "Authorization"],
 )
+
+
+@app.middleware("http")
+async def auth_and_headers(request: Request, call_next):
+    if API_TOKEN and request.method != "OPTIONS" and request.url.path not in PUBLIC_PATHS:
+        sent = request.headers.get("authorization", "")
+        if not hmac.compare_digest(sent.encode(), f"Bearer {API_TOKEN}".encode()):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+    resp = await call_next(request)
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+MAX_RESUME_BYTES = 5 * 1024 * 1024
+MAX_RESUME_PAGES = 20
+_agent_lock = threading.Lock()          # one agent run at a time (each run scrapes for minutes)
+_jobs: dict[str, dict] = {}             # background agent runs: id -> {status, result, started}
 
 # ── IN-MEMORY STORES (reset on server restart) ────────────────────────────────
 # feedback: { job_url: "up" | "down" }
@@ -69,38 +99,61 @@ def get_today_usage() -> dict:
 
 
 # ── REQUEST SCHEMAS ───────────────────────────────────────────────────────────
+def Short():
+    return Field(default="", max_length=200)
+
+
+def UserId():
+    return Field(default="default", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.@-]+$")
+
+
 class SearchParams(BaseModel):
-    keywords:    list[str] = ["product manager", "product owner"]
-    exclude:     list[str] = ["intern", "junior", "hardware", "mechanical"]
-    locations:   list[str] = []
-    sources:     list[str] = ["remotive"]
+    keywords:    list[str] = Field(default=["product manager", "product owner"], max_length=10)
+    exclude:     list[str] = Field(default=["intern", "junior", "hardware", "mechanical"], max_length=30)
+    locations:   list[str] = Field(default=[], max_length=5)
+    sources:     list[Literal["ats", "jobspy", "remotive", "jsearch", "adzuna"]] = ["remotive"]
     h1b_only:    bool      = False
-    hours:       int       = 0
+    hours:       int       = Field(default=0, ge=0, le=720)
     use_ai:      bool      = False
-    resume_text: str       = ""
+    resume_text: str       = Field(default="", max_length=20000)
+
+Phrase = Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)]
+
+
+class AgentFilters(BaseModel):
+    """Per-run overrides of the profile, set in the UI. Omitted/None fields keep the profile value."""
+    titles:            list[Phrase] | None = Field(default=None, max_length=15)
+    locations:         list[Phrase] | None = Field(default=None, max_length=8)
+    remote_ok:         bool | None = None
+    visa:              Literal["none", "new_sponsorship", "h1b_transfer"] | None = None
+    sponsors_only:     bool | None = None   # company must be a confirmed Strong/Moderate H-1B sponsor
+    industries:        list[Phrase] | None = Field(default=None, max_length=10)
+    exclude_companies: list[Phrase] | None = Field(default=None, max_length=100)
+
 
 class AgentParams(BaseModel):
-    goal:         str  = ""
-    resume_text:  str  = ""
-    user_id:      str  = "default"
-    min_fit:      int  = 40
-    resume_years: int | None = None
-    hours:        int | None = None   # overrides rules recency_hours (24 daily, 168 weekly)
+    filters:      AgentFilters | None = None
+    goal:         str  = Field(default="", max_length=500)
+    resume_text:  str  = Field(default="", max_length=20000)
+    user_id:      str  = UserId()
+    min_fit:      int  = Field(default=40, ge=0, le=100)
+    resume_years: int | None = Field(default=None, ge=0, le=60)
+    hours:        int | None = Field(default=None, ge=1, le=720)   # overrides recency_hours (24 daily, 168 weekly)
 
 class SheetExport(BaseModel):
-    sheet_id: str = ""              # falls back to env SHEET_ID
-    tab:      str = "Leads"
-    user_id:  str = "default"
-    since:    str = ""
-    track:    str = ""              # "c2c" for the "C2C Leads" tab, "ft" for FT tabs
-    hot_only: bool = True           # only Hot Leads (score >= 65) go to the Sheet
-    jobs:     list[dict] = []   # optional: export these instead of stored leads
+    sheet_id: str = Field(default="", max_length=100, pattern=r"^[A-Za-z0-9_-]*$")  # falls back to env SHEET_ID
+    tab:      str = Field(default="Leads", min_length=1, max_length=100)
+    user_id:  str = UserId()
+    since:    str = Field(default="", max_length=20)
+    track:    Literal["", "ft", "c2c"] = ""   # "c2c" for the "C2C Leads" tab, "ft" for FT tabs
+    hot_only: bool = True                     # only Hot Leads (score >= 65) go to the Sheet
+    jobs:     list[dict] = Field(default=[], max_length=500)   # optional: export these instead of stored leads
 
 class FeedbackPayload(BaseModel):
-    url:      str   # Job URL as unique ID
-    title:    str
-    company:  str
-    signal:   str   # "up" or "down"
+    url:      str = Field(max_length=2000)   # Job URL as unique ID
+    title:    str = Short()
+    company:  str = Short()
+    signal:   Literal["up", "down", ""]
 
 
 # ── CORE PIPELINE ─────────────────────────────────────────────────────────────
@@ -186,7 +239,7 @@ def pipeline(params: SearchParams) -> list[dict]:
 
 @app.get("/")
 def root():
-    return {"service": "JobFinder", "version": "3.0", "status": "running"}
+    return {"service": "JobFinder", "version": "4.0", "status": "running", "auth": bool(API_TOKEN)}
 
 
 @app.post("/search")
@@ -199,9 +252,10 @@ def search(params: SearchParams):
             "usage": get_today_usage(),
             "limits": DAILY_LIMITS
         })
-    except Exception as e:
+    except Exception:
+        log.exception("search failed")
         return JSONResponse({
-            "error": str(e),
+            "error": "search failed (see server log)",
             "count": 0,
             "jobs": [],
             "usage": get_today_usage(),
@@ -219,27 +273,82 @@ def export(params: SearchParams):
             media_type="text/csv",
             headers={"Content-Disposition": "attachment; filename=jobs.csv"}
         )
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception:
+        log.exception("export failed")
+        return JSONResponse({"error": "export failed (see server log)"}, status_code=500)
+
+
+def _run_agent(params: AgentParams) -> dict:
+    rules = apply_filters(load_rules(), params.filters.model_dump() if params.filters else None)
+    if params.hours:
+        rules["profile"]["recency_hours"] = params.hours
+    run = AgentRun(params.resume_text, params.user_id, rules=rules, min_fit=params.min_fit, resume_years=params.resume_years)
+    res = run.run(params.goal)
+    for l in res["leads"]:  # the UI doesn't need full JDs; keep responses small
+        l.pop("description", None)
+    return res
 
 
 @app.post("/agent/run")
 def agent_run(params: AgentParams):
-    """Agentic run: LLM (or deterministic plan) searches, gates, researches H1B, scores, saves."""
+    """Synchronous agent run (CLI/tests). The UI uses /agent/start + /agent/jobs/{id} instead."""
+    if not _agent_lock.acquire(blocking=False):
+        return JSONResponse({"error": "an agent run is already in progress", "leads": []}, status_code=429)
     try:
-        rules = load_rules()
-        if params.hours:
-            rules["profile"]["recency_hours"] = params.hours
-        run = AgentRun(params.resume_text, params.user_id, rules=rules, min_fit=params.min_fit, resume_years=params.resume_years)
-        return JSONResponse(run.run(params.goal))
-    except Exception as e:
-        return JSONResponse({"error": str(e), "leads": []}, status_code=500)
+        return JSONResponse(_run_agent(params))
+    except Exception:
+        log.exception("agent run failed")
+        return JSONResponse({"error": "agent run failed (see server log)", "leads": []}, status_code=500)
+    finally:
+        _agent_lock.release()
+
+
+@app.post("/agent/start")
+def agent_start(params: AgentParams):
+    """Start an agent run in the background (runs take minutes; free hosts drop long HTTP requests)."""
+    if not _agent_lock.acquire(blocking=False):
+        running = next((k for k, v in _jobs.items() if v["status"] == "running"), None)
+        return JSONResponse({"error": "an agent run is already in progress", "job_id": running}, status_code=429)
+    job_id = uuid.uuid4().hex
+    for k in sorted(_jobs, key=lambda k: _jobs[k]["started"])[:-20]:  # keep the last 20 results only
+        _jobs.pop(k, None)
+    _jobs[job_id] = {"status": "running", "started": time.time(), "result": None}
+
+    def work():
+        try:
+            _jobs[job_id].update(status="done", result=_run_agent(params))
+        except Exception:
+            log.exception("agent job failed")
+            _jobs[job_id].update(status="error", result={"error": "agent run failed (see server log)", "leads": []})
+        finally:
+            _agent_lock.release()
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/profile/filters")
+def get_profile_filters():
+    """Defaults for the UI's Search filters panel (the server profile). Requires the token like any endpoint."""
+    return profile_filters(load_rules())
+
+
+@app.get("/agent/jobs/{job_id}")
+def agent_job(job_id: str):
+    j = _jobs.get(job_id)
+    if not j:
+        return JSONResponse({"error": "unknown job"}, status_code=404)
+    return {"job_id": job_id, "status": j["status"], "elapsed_s": int(time.time() - j["started"]), "result": j["result"]}
 
 
 @app.get("/leads")
 def leads(user_id: str = "default", since: str = "", track: str = "", format: str = "json"):
     """All saved leads. format=json | csv | xlsx (xlsx/csv open directly in Google Sheets)."""
+    if format not in ("json", "csv", "xlsx") or track not in ("", "ft", "c2c") or len(user_id) > 64 or len(since) > 20:
+        return JSONResponse({"error": "bad parameters"}, status_code=400)
     rows = store.list_leads(user_id, since, track)
+    for r in rows:
+        r.pop("description", None)
     if format == "csv":
         return Response(to_csv(rows), media_type="text/csv",
                         headers={"Content-Disposition": "attachment; filename=leads.csv"})
@@ -272,7 +381,12 @@ def feedback(payload: FeedbackPayload):
     'down' → job will be demoted / hidden
     Feedback persists for the session (server lifetime).
     """
-    feedback_store[payload.url] = payload.signal
+    if payload.signal:
+        if payload.url not in feedback_store and len(feedback_store) >= 5000:
+            feedback_store.pop(next(iter(feedback_store)))  # bounded: oldest entry out
+        feedback_store[payload.url] = payload.signal
+    else:
+        feedback_store.pop(payload.url, None)
     return {"stored": True, "url": payload.url, "signal": payload.signal}
 
 
@@ -280,12 +394,16 @@ def feedback(payload: FeedbackPayload):
 async def parse_resume(file: UploadFile = File(...)):
     """Extracts full text + matched keywords from uploaded resume PDF."""
     try:
-        content = await file.read()
+        content = await file.read(MAX_RESUME_BYTES + 1)
         if not content:
             return JSONResponse({"error": "Empty file"}, status_code=400)
-        
+        if len(content) > MAX_RESUME_BYTES:
+            return JSONResponse({"error": "File too large (max 5 MB)"}, status_code=413)
+        if not content.startswith(b"%PDF-"):
+            return JSONResponse({"error": "Not a PDF"}, status_code=400)
+
         with pdfplumber.open(io.BytesIO(content)) as pdf:
-            text = " ".join(p.extract_text() or "" for p in pdf.pages)
+            text = " ".join(p.extract_text() or "" for p in pdf.pages[:MAX_RESUME_PAGES])
         
         if not text:
             return JSONResponse({"keywords": [], "resume_text": ""})
@@ -298,8 +416,9 @@ async def parse_resume(file: UploadFile = File(...)):
         ]
         matched = [kw for kw in skill_keywords if kw in text.lower()]
         return {"keywords": matched, "resume_text": text[:2000]}
-    except Exception as e:
-        return JSONResponse({"error": str(e), "keywords": [], "resume_text": ""}, status_code=400)
+    except Exception:
+        log.exception("resume parse failed")
+        return JSONResponse({"error": "could not read this PDF", "keywords": [], "resume_text": ""}, status_code=400)
 
 
 @app.get("/usage")
@@ -316,4 +435,4 @@ def usage():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "3.0"}
+    return {"status": "ok", "version": "4.0"}

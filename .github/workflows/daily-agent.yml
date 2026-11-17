@@ -7,9 +7,12 @@ on:
   schedule:
     - cron: "7 12 * * 1-5"   # 7:07 ET weekdays
   workflow_dispatch:
+permissions:
+  contents: read   # least privilege: the run only reads the repo
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults: { run: { working-directory: backend } }
     steps:
       - uses: actions/checkout@v4

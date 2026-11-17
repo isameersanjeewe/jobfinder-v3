@@ -20,7 +20,9 @@ def normalize(title, company, location, url, posted, source, description=""):
         "url":         url.strip(),
         "posted":      posted or "N/A",
         "source":      source,
-        "description": description[:800],   # Truncated — used for AI scoring
+        # Keep (almost) the whole JD: "we are unable to sponsor" lines usually sit at the END of a posting,
+        # and the visa gate must see them. ai_service trims its own prompt input.
+        "description": (description or "")[:20000],
         "scraped":     datetime.now().strftime("%Y-%m-%d"),
     }
 

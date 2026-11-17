@@ -3,79 +3,312 @@
   "profile": {
     "name": "example",
     "titles": [
-      "Product Manager", "Senior Product Manager", "Product Owner", "Senior Product Owner",
-      "AI Product Manager", "Data Product Manager", "Platform Product Manager",
-      "Program Manager", "Technical Program Manager"
+      "Product Manager",
+      "Senior Product Manager",
+      "Product Owner",
+      "Senior Product Owner",
+      "AI Product Manager",
+      "Data Product Manager",
+      "Platform Product Manager",
+      "Program Manager",
+      "Technical Program Manager"
     ],
-    "fallback_titles": ["Program Lead", "Technical Project Manager"],
-    "exclude_title_words": ["intern", "junior", "associate product", "hardware", "mechanical", "marketing manager", "sales"],
-    "locations": ["Austin, TX"],
+    "fallback_titles": [
+      "Program Lead",
+      "Technical Project Manager"
+    ],
+    "core_title_terms": [
+      "product manager",
+      "product owner",
+      "program manager",
+      "product lead"
+    ],
+    "exclude_title_words": [
+      "intern",
+      "junior",
+      "associate product",
+      "hardware",
+      "mechanical",
+      "marketing manager",
+      "sales"
+    ],
+    "locations": [
+      "Austin, TX"
+    ],
     "remote_ok": true,
-    "geo_pass_terms": ["austin", "round rock", "texas", "tx", "remote"],
-    "geo_country_only": ["united states", "united states of america", "usa", "us", "anywhere"],
+    "geo_pass_terms": [
+      "austin",
+      "round rock",
+      "texas",
+      "tx",
+      "remote"
+    ],
+    "geo_country_only": [
+      "united states",
+      "united states of america",
+      "usa",
+      "us",
+      "anywhere"
+    ],
     "geo_rank": [
-      ["austin", "round rock"],
-      ["texas", "tx"],
-      ["remote"]
+      [
+        "austin",
+        "round rock"
+      ],
+      [
+        "texas",
+        "tx"
+      ],
+      [
+        "remote"
+      ]
     ],
     "recency_hours": 24,
     "weekly_recency_hours": 168
   },
   "visa": {
-    "_note": "Set enabled=false if you don't need employer visa sponsorship. When enabled, postings with no-sponsorship language fail, and the company must be a Strong/Moderate sponsor.",
+    "_note": "Set enabled=false if you don't need employer visa sponsorship (or pick 'No sponsorship needed' in the app's Search filters). When enabled, postings with no-sponsorship language fail, and the company must be a Strong/Moderate sponsor unless require_company_confirmed=false.",
     "enabled": true,
+    "mode": "new_sponsorship",
+    "_mode_note": "new_sponsorship = you need a new H-1B petition. h1b_transfer = you already hold an H-1B: postings that refuse NEW sponsorship but accept change-of-employer (transfer) petitions stay in.",
     "require_company_confirmed": true,
     "posting_no_patterns": [
-      "no sponsorship", "sponsorship not available", "sponsorship is not available", "not able to sponsor",
-      "unable to sponsor", "will not sponsor", "does not sponsor", "cannot sponsor", "without sponsorship",
-      "without the need for sponsorship", "us citizen", "u.s. citizen", "citizenship is required",
-      "green card", "permanent resident", "security clearance", "clearance required", "fedramp",
-      "w2 only", "w-2 only", "usc/gc", "usc or gc", "no h1b", "no h-1b"
+      "no sponsorship",
+      "sponsorship not available",
+      "sponsorship is not available",
+      "not able to sponsor",
+      "unable to sponsor",
+      "will not sponsor",
+      "does not sponsor",
+      "cannot sponsor",
+      "without sponsorship",
+      "without the need for sponsorship",
+      "us citizen",
+      "u.s. citizen",
+      "citizenship is required",
+      "green card",
+      "permanent resident",
+      "security clearance",
+      "clearance required",
+      "w2 only",
+      "w-2 only",
+      "usc/gc",
+      "usc or gc",
+      "no h1b",
+      "no h-1b"
     ],
-    "posting_yes_patterns": ["h1b", "h-1b", "visa sponsorship available", "will sponsor", "sponsorship available"]
+    "posting_yes_patterns": [
+      "h1b",
+      "h-1b",
+      "visa sponsorship available",
+      "will sponsor",
+      "sponsorship available",
+      "sponsorship is available",
+      "we sponsor"
+    ]
   },
   "contract_track": {
     "enabled": true,
     "recency_hours": 168,
-    "exclude_patterns": ["usc only", "gc only", "usc/gc", "no h1b", "no h-1b", "w2 only", "w-2 only", "clearance", "citizen"]
+    "exclude_patterns": [
+      "usc only",
+      "gc only",
+      "usc/gc",
+      "no h1b",
+      "no h-1b",
+      "w2 only",
+      "w-2 only",
+      "clearance",
+      "citizen"
+    ]
   },
   "industry_boost": {
-    "terms": ["fintech", "payments", "saas", "data platform", "machine learning", "llm", "genai", "analytics"],
-    "penalty_terms": ["ads", "advertising", "growth funnel", "hardware"]
+    "terms": [
+      "fintech",
+      "payments",
+      "saas",
+      "data platform",
+      "machine learning",
+      "llm",
+      "genai",
+      "analytics"
+    ],
+    "penalty_terms": [
+      "ads",
+      "advertising",
+      "growth funnel",
+      "hardware"
+    ]
   },
   "scoring": {
     "_note": "Default 0-100 lead score (docs/CONTEXT.md). H1B 35 / Title 25 / Geo 15 / Industry 15 / Contact 10. Hot Lead >= hot_threshold. Industry tiers are an example: list your own priorities, highest first.",
     "hot_threshold": 65,
-    "h1b_points": {"Strong": 35, "Moderate": 22, "Unverified": 10, "Risk": 3, "Excluded": 0},
-    "secondary_title_terms": ["program manager", "technical program", "program lead", "project manager", "product delivery"],
+    "h1b_points": {
+      "Strong": 35,
+      "Moderate": 22,
+      "Unverified": 10,
+      "Risk": 3,
+      "Excluded": 0
+    },
+    "secondary_title_terms": [
+      "program manager",
+      "technical program",
+      "program lead",
+      "project manager",
+      "product delivery"
+    ],
     "industry_priority": [
-      {"points": 15, "terms": ["fintech", "payments", "financial services"]},
-      {"points": 13, "terms": ["saas", "data platform", "ai platform", "enterprise software"]},
-      {"points": 10, "terms": ["consumer app", "e-commerce", "marketplace"]},
-      {"points": 8, "terms": ["healthcare", "insurance"]},
-      {"points": 5, "terms": ["telecom", "iot"]}
+      {
+        "points": 15,
+        "terms": [
+          "fintech",
+          "payments",
+          "financial services"
+        ]
+      },
+      {
+        "points": 13,
+        "terms": [
+          "saas",
+          "data platform",
+          "ai platform",
+          "enterprise software"
+        ]
+      },
+      {
+        "points": 10,
+        "terms": [
+          "consumer app",
+          "e-commerce",
+          "marketplace"
+        ]
+      },
+      {
+        "points": 8,
+        "terms": [
+          "healthcare",
+          "insurance"
+        ]
+      },
+      {
+        "points": 5,
+        "terms": [
+          "telecom",
+          "iot"
+        ]
+      }
     ],
     "opportunistic_points": 8,
-    "regulated_ai_override": {"ai_terms": ["genai", "generative ai", "agentic", "llm"], "regulated_terms": ["regulated", "compliance", "hipaa", "gxp", "fda", "sox"]},
-    "contact_points": {"hiring": 10, "recruiter": 6}
+    "regulated_ai_override": {
+      "ai_terms": [
+        "genai",
+        "generative ai",
+        "agentic",
+        "llm"
+      ],
+      "regulated_terms": [
+        "regulated",
+        "compliance",
+        "hipaa",
+        "gxp",
+        "fda",
+        "sox"
+      ]
+    },
+    "contact_points": {
+      "hiring": 10,
+      "recruiter": 6
+    }
   },
   "companies": {
     "_note": "Company sponsorship tiers from public LCA data (e.g. h1bdata.info, myvisajobs.com). Research results are saved per user in rules.local.json.",
-    "strong": ["amazon", "microsoft", "google", "meta", "stripe", "snowflake", "cisco", "crowdstrike", "nvidia", "salesforce"],
+    "strong": [
+      "amazon",
+      "microsoft",
+      "google",
+      "meta",
+      "apple",
+      "stripe",
+      "snowflake",
+      "cisco",
+      "crowdstrike",
+      "nvidia",
+      "salesforce",
+      "adobe",
+      "intuit",
+      "paypal",
+      "servicenow",
+      "atlassian",
+      "palo alto networks",
+      "zscaler",
+      "akamai",
+      "walmart",
+      "bloomberg",
+      "bank of america",
+      "citi",
+      "citibank",
+      "bny",
+      "nokia",
+      "mckinsey",
+      "samsara",
+      "toast",
+      "motive"
+    ],
     "moderate": [],
     "risk": [],
     "excluded": [],
     "staffing": [
-      "apex systems", "kforce", "randstad", "teksystems", "insight global", "robert half", "tata consultancy",
-      "infosys", "cognizant", "wipro", "hcl", "collabera", "judge group", "experis", "aerotek", "modis"
+      "apex systems",
+      "kforce",
+      "randstad",
+      "teksystems",
+      "insight global",
+      "robert half",
+      "tata consultancy",
+      "infosys",
+      "cognizant",
+      "wipro",
+      "hcl",
+      "collabera",
+      "judge group",
+      "experis",
+      "aerotek",
+      "modis"
     ]
   },
   "ats_boards": {
     "_note": "Direct employer job boards (public JSON). ats: greenhouse | lever | ashby | workday | null (auto-detect Greenhouse/Lever/Ashby). Workday slug = 'tenant.wdN/site' from the careers URL https://<tenant>.wdN.myworkdayjobs.com/<site>.",
-    "stripe": {"ats": "greenhouse", "slug": "stripe"},
-    "snowflake": {"ats": null, "slug": "snowflake"},
-    "anthropic": {"ats": null, "slug": "anthropic"},
-    "crowdstrike": {"ats": "workday", "slug": "crowdstrike.wd5/crowdstrikecareers"},
-    "cisco": {"ats": "workday", "slug": "cisco.wd5/Cisco_Careers"}
+    "stripe": {
+      "ats": "greenhouse",
+      "slug": "stripe"
+    },
+    "snowflake": {
+      "ats": null,
+      "slug": "snowflake"
+    },
+    "anthropic": {
+      "ats": null,
+      "slug": "anthropic"
+    },
+    "crowdstrike": {
+      "ats": "workday",
+      "slug": "crowdstrike.wd5/crowdstrikecareers"
+    },
+    "cisco": {
+      "ats": "workday",
+      "slug": "cisco.wd5/Cisco_Careers"
+    },
+    "samsara": {
+      "ats": "greenhouse",
+      "slug": "samsara"
+    },
+    "toast": {
+      "ats": "greenhouse",
+      "slug": "toast"
+    },
+    "motive": {
+      "ats": null,
+      "slug": "gomotive"
+    }
   }
 }

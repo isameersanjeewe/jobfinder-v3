@@ -4,6 +4,9 @@ How the job finder decides what is a lead, and why. Everything user-specific (ti
 company tiers, industry priorities, job boards) lives in the user's profile: `backend/rules.json`
 (gitignored; copy `backend/rules.example.json` to start). Personal notes belong in `docs/*.local.md` (gitignored).
 
+Any user can also override the main settings per run from the UI's Search filters panel (titles, locations, remote,
+visa need: none / new H-1B sponsorship / H-1B transfer, sponsors-only, industries, companies to skip). See CLAUDE.md.
+
 ## Two tracks
 **Full-time (FT, default)**
 - Titles: the profile's `titles`. Secondary titles (program/project) score lower than primary ones.
@@ -11,8 +14,13 @@ company tiers, industry priorities, job boards) lives in the user's profile: `ba
   location ("United States") counts as remote/unspecified; "City, ST, United States" for an out-of-area city fails.
 - Geo ranking (sort only): `geo_rank` buckets, most preferred first.
 - Recency: 24h for daily runs, 7 days (168h) for weekly runs. **Undated = fail.** A canonical posted date is required.
-- Visa gate (only when `visa.enabled`): exclude postings that say no sponsorship / citizenship / clearance.
+- Visa gate (only when `visa.enabled`): exclude postings that say no sponsorship / citizenship / clearance / US person.
   Company must be a **Strong or Moderate** sponsor. Unverified -> research, else exclude. Risk/Excluded -> out.
+- `visa.mode`: `new_sponsorship` (needs a new petition) or `h1b_transfer` (already holds an H-1B). Postings that refuse
+  NEW sponsorship but accept change-of-employer (transfer) petitions are classified `Transfer` and kept only in `h1b_transfer` mode.
+- The whole JD is scanned: disclaimers usually sit at the end (in a live run, 144 of 147 were past the first 800 characters).
+- Citizenship words in inclusive lists ("US citizens, green card and H1B holders welcome") don't block when sponsorship is
+  also stated; "no clearance required" doesn't block. A skill mention like "FedRAMP experience" is not a citizenship requirement.
 
 **Contract / C2C track**
 - Same titles plus `fallback_titles`. 7-day recency.
@@ -26,7 +34,10 @@ company tiers, industry priorities, job boards) lives in the user's profile: `ba
   role-specific confirmation on the posting; otherwise they fail FT (`staffing_c2c_only`) and belong on the C2C track.
 - An explicit no-sponsorship or citizenship line on a posting always excludes, regardless of company tier.
 - Thin volume (~2-6 LCAs/yr) excludes even large companies. An exact title-level LCA match is the strongest signal.
-- Manual tiers in the profile win over automated research. Research results persist per user in `rules.local.json`.
+- Manual tiers in the profile win over automated research. Research results persist per user in `rules.local.json`
+  (re-checked after 90 days; Unverified after 7). h1bdata.info must be queried per year: an "all years" query returns
+  no table for large employers, which used to look like zero filings.
+- Thresholds on recent yearly volume: >= 100 Strong; >= 20 (or >= 10 with a same-title filing) Moderate; 1-9 Risk; 0 Unverified.
 - Company stage: prefer Series B+ or large enterprises with immigration counsel; very small companies = Risk by default.
 
 ## Scoring model (implemented in `fit_service.score_lead`, weights in profile `scoring`)

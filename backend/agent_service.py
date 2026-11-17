@@ -11,10 +11,10 @@
 #   LLM_PROVIDER=anthropic + ANTHROPIC_API_KEY (paid)
 #   LLM_PROVIDER=none -> deterministic plan (same tools, fixed order). Still fully functional.
 
-import json, os, re, requests
+import datetime, json, os, re, requests
 from scraper_service import fetch_remotive
 from free_sources import fetch_jobspy, fetch_ats
-from rules_service import load_rules, apply_gate, save_company_signal
+from rules_service import load_rules, apply_gate, save_company_signal, search_queries
 from fit_service import keyword_fit, score_lead
 import store
 
@@ -64,7 +64,28 @@ Rules (from the user's profile, non-negotiable):
 - Research unverified companies only if they have a passing-otherwise job. Upgrade only with recent same-title or high overall LCA volume. Under ~10 filings/year = Risk.
 - Priority industries, highest first: {industries}. Weak fits: {penalties}.
 Process: search ats first, then jobspy, then remotive. Score passing jobs, save those with fit >= {min_fit} (or strong strategic fit), then finish.
+Jobs gated 'staffing_c2c_only' are staffing-firm postings: save them with track='c2c' (the contract track re-checks them).
 If a source errors or returns 0, note it and move on. Be economical: few, targeted calls."""
+
+
+_CO_STOP = {"inc", "llc", "ltd", "corp", "corporation", "co", "company", "services", "systems", "group",
+            "holdings", "the", "com", "plc", "lp", "usa", "us"}
+
+
+def dedupe_key(job: dict) -> tuple:
+    """Same posting from several boards (Indeed/Glassdoor/LinkedIn/employer site) has different URLs.
+    Key on normalized company + title + first location segment ("Amazon.com Services LLC" == "Amazon")."""
+    co = " ".join(w for w in re.findall(r"[a-z0-9&]+", (job.get("company") or "").lower()) if w not in _CO_STOP)
+    title = " ".join(re.findall(r"[a-z0-9]+", (job.get("title") or "").lower()))
+    city = " ".join(re.findall(r"[a-z]+", re.split(r"[,;/|(]", (job.get("location") or "").lower())[0]))
+    return co, title, city
+
+
+def _days_apart(a, b) -> int:
+    try:
+        return abs((datetime.date.fromisoformat(str(a)[:10]) - datetime.date.fromisoformat(str(b)[:10])).days)
+    except ValueError:
+        return 99
 
 
 class AgentRun:
@@ -76,6 +97,10 @@ class AgentRun:
         self.min_fit = min_fit
         self.resume_years = resume_years
         self.pool: dict[str, dict] = {}
+        self._urls: set[str] = set()
+        self._keys: dict[tuple, str] = {}
+        self._title_idx: dict[tuple, list[str]] = {}   # (company, title) -> ids, for remote multi-hub listings
+        self.duplicates = 0
         self.overrides: dict[str, str] = {}
         self.saved: list[dict] = []
         self.trace: list[dict] = []
@@ -101,7 +126,7 @@ class AgentRun:
             keywords = None  # placeholder titles -> use the profile's titles
         kws = keywords or self.rules["profile"]["titles"][:4]
         if source == "ats":
-            jobs = fetch_ats(self.rules["ats_boards"])
+            jobs = fetch_ats(self.rules["ats_boards"], queries=search_queries(self.rules))
         elif source == "jobspy":
             jobs = fetch_jobspy(kws, location, hours, remote=remote,
                                 proxies=[p for p in os.getenv("JOBSPY_PROXIES", "").split(",") if p] or None,
@@ -113,9 +138,24 @@ class AgentRun:
             j["id"] = f"j{len(self.pool)}"
             j["track"] = track
             j["hours"] = hours
-            self._gate(j, hours, track)
-            if any(p["url"] == j["url"] for p in self.pool.values()):
+            if j["url"] in self._urls:
                 continue
+            key = dedupe_key(j)
+            dup_id = self._keys.get(key) or self._remote_twin(j, key)
+            if dup_id:  # cross-board duplicate: keep the first copy (employer boards are searched first)
+                kept = self.pool[dup_id]
+                self._urls.add(j["url"])
+                self.duplicates += 1
+                counts["duplicate"] = counts.get("duplicate", 0) + 1
+                if j.get("description") and j["description"] not in (kept.get("description") or ""):
+                    # merge text so a "no sponsorship" line on any copy still blocks the lead
+                    kept["description"] = f"{kept.get('description') or ''}\n{j['description']}".strip()
+                    self._gate(kept, kept.get("hours", hours), kept.get("track", track))
+                continue
+            self._gate(j, hours, track)
+            self._urls.add(j["url"])
+            self._keys[key] = j["id"]
+            self._title_idx.setdefault(key[:2], []).append(j["id"])
             self.pool[j["id"]] = j
             counts[j["gate"]] = counts.get(j["gate"], 0) + 1
             if j["gate"] == "pass":
@@ -127,21 +167,50 @@ class AgentRun:
                 "passing": [{k: j[k] for k in ("id", "title", "company", "location", "posted", "company_h1b")} for j in passing[:25]],
                 "unverified_companies": sorted(unverified)[:15]}
 
+    def _remote_twin(self, j, key):
+        """Remote roles are listed under different hub cities per board ("RTP", "Durham", "Triangle"):
+        same company + title, either copy remote, posted within a day -> same job."""
+        for i in self._title_idx.get(key[:2], []):
+            other = self.pool[i]
+            if (j.get("is_remote") or other.get("is_remote")) and _days_apart(j.get("posted"), other.get("posted")) <= 1:
+                return i
+        return None
+
     def research_company_h1b(self, company):
         cached = self.rules.get("researched", {}).get(company.lower())
-        if cached:  # persisted in rules.local.json by an earlier run
+        if cached:  # persisted in rules.local.json by an earlier run; re-check when stale
+            try:
+                age = (datetime.date.today() - datetime.date.fromisoformat(cached.get("date", ""))).days
+            except ValueError:
+                age = 9999
+            if age > (7 if cached.get("signal") == "Unverified" else 90):
+                cached = None
+        if cached:
             return {"company": company, "cached": True, "suggested_signal": cached["signal"],
                     "basis": cached.get("basis", ""), "researched_on": cached.get("date")}
         try:
-            r = requests.get("https://h1bdata.info/index.php", params={"em": company, "job": "", "city": "", "year": "all years"},
-                             headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-            rows = re.findall(r"<tr>(.*?)</tr>", r.text, re.S)[1:]
-            titles = [re.sub(r"<[^>]+>", "", re.findall(r"<td>(.*?)</td>", row, re.S)[1]).upper() for row in rows if row.count("<td") > 3]
-            years = re.findall(r"\b(20\d\d)\b", r.text)
-            pm = [t for t in titles if "PRODUCT MANAGER" in t or "PROGRAM MANAGER" in t or "PRODUCT OWNER" in t]
-            n = len(titles)
-            hint = "Strong" if n >= 100 else "Moderate" if n >= 20 or pm else "Risk" if n else "Unverified"
-            return {"company": company, "lca_rows": n, "pm_family_rows": len(pm), "latest_year": max(years) if years else None,
+            # One query per year: "all years" returns no table for large employers (it looked like 0 filings,
+            # so big sponsors were recorded as Unverified). Last full year + current year = recent volume.
+            fam = {t.upper() for t in self.rules["profile"]["titles"] + self.rules["profile"].get("core_title_terms", [])}
+            this_year = datetime.date.today().year
+            per_year, pm = {}, 0
+            for year in (this_year - 1, this_year):
+                r = requests.get("https://h1bdata.info/index.php", params={"em": company, "job": "", "city": "", "year": str(year)},
+                                 headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                r.raise_for_status()
+                if "<table" not in r.text.lower():
+                    # rate-limit/error page: don't record "0 filings" (it would be cached as Unverified forever)
+                    raise ValueError("no results table in response")
+                rows = re.findall(r"<tr>(.*?)</tr>", r.text, re.S)[1:]
+                titles = [re.sub(r"<[^>]+>", "", re.findall(r"<td>(.*?)</td>", row, re.S)[1]).upper()
+                          for row in rows if row.count("<td") > 3]
+                per_year[year] = len(titles)
+                pm += sum(1 for t in titles if any(f in t for f in fam))
+            n = max(per_year.values())  # filings per year (current year is partial)
+            # Thin volume (< ~10/yr) is Risk even with a same-title match; a same-title match lifts 10+ to Moderate.
+            hint = "Strong" if n >= 100 else "Moderate" if n >= 20 or (pm and n >= 10) else "Risk" if n else "Unverified"
+            return {"company": company, "lca_rows": n, "lca_by_year": per_year, "pm_family_rows": pm,
+                    "latest_year": max((y for y, c in per_year.items() if c), default=None),
                     "suggested_signal": hint, "verify": f"https://www.myvisajobs.com/search/?q={company}"}
         except Exception as e:
             return {"company": company, "error": f"lookup failed: {e.__class__.__name__}", "suggested_signal": "Unverified"}
@@ -175,7 +244,16 @@ class AgentRun:
         return {"scores": out}
 
     def save_leads(self, ids, track="ft"):
-        jobs = [self.pool[i] for i in ids if i in self.pool and self.pool[i]["gate"] == "pass"]
+        if track == "c2c" and self.rules.get("contract_track", {}).get("enabled"):
+            # contract track has its own gate (staffing vendors allowed, C2C visa patterns): re-gate before saving
+            ct_hours = self.rules["contract_track"].get("recency_hours", 168)
+            for i in ids:
+                if i in self.pool and self.pool[i]["track"] != "c2c":
+                    self.pool[i]["track"] = "c2c"
+                    self._gate(self.pool[i], ct_hours, "c2c")
+        saved_urls = {s["url"] for s in self.saved}
+        jobs = [self.pool[i] for i in ids if i in self.pool and self.pool[i]["gate"] == "pass"
+                and self.pool[i]["url"] not in saved_urls]
         for j in jobs:
             if "score" not in j:  # LLM may save without scoring first
                 j.update(score_lead(j, self.rules))
@@ -208,8 +286,11 @@ class AgentRun:
 
     def _system(self):
         p, sc = self.rules["profile"], self.rules.get("scoring", {})
-        visa = ("Visa: the user needs employer sponsorship; company must be a Strong/Moderate sponsor; any posting saying "
-                "no sponsorship/citizenship/clearance is out.") if self.rules["visa"].get("enabled", True) else "Visa: no sponsorship needed."
+        v = self.rules["visa"]
+        visa = ("Visa: the user needs employer H-1B sponsorship" +
+                (" (already holds an H-1B: postings that accept transfers / change of employer are fine)" if v.get("mode") == "h1b_transfer" else "") +
+                ("; company must be a Strong/Moderate sponsor" if v.get("require_company_confirmed", True) else "") +
+                "; any posting saying no sponsorship/citizenship/clearance is out.") if v.get("enabled", True) else "Visa: no sponsorship needed."
         fill = {"{min_fit}": str(self.min_fit), "{hours}": str(p["recency_hours"]),
                 "{locations}": ", ".join(p.get("locations", [])) or "any",
                 "{remote}": ", or US remote" if p.get("remote_ok") else "",
@@ -277,16 +358,36 @@ class AgentRun:
                 res = self.call("search_jobs", {"source": src, "keywords": kw, "hours": self.rules["profile"]["recency_hours"]})
                 if not res.get("fetched"):
                     notes.append(f"{src}: 0 fetched")
-            for co in sorted({j["company"] for j in self.pool.values() if j["gate"] == "company_unverified"})[:research_limit]:
+            # research the most promising unverified companies first: best score each could reach if it sponsors
+            best: dict[str, int] = {}
+            for j in self.pool.values():
+                if j["gate"] == "company_unverified":
+                    s = score_lead(dict(j, company_h1b="Strong"), self.rules)["score"]
+                    best[j["company"]] = max(best.get(j["company"], 0), s)
+            looked_up = 0
+            for co in sorted(best, key=lambda c: (-best[c], c)):
+                if looked_up >= research_limit:
+                    break
                 info = self.call("research_company_h1b", {"company": co})
-                if info.get("suggested_signal") in ("Strong", "Moderate", "Risk", "Unverified") and not info.get("cached") and not info.get("error"):
+                if info.get("cached"):
+                    continue  # free: answered from rules.local.json
+                looked_up += 1
+                if info.get("suggested_signal") in ("Strong", "Moderate", "Risk", "Unverified") and not info.get("error"):
                     self.call("set_company_signal", {"company": co, "signal": info["suggested_signal"], "basis": "h1bdata.info"})
         ids = [i for i, j in self.pool.items() if j["gate"] == "pass"]
         self.call("score_jobs", {"ids": ids})
         keep = [i for i in ids if not self.resume or self.pool[i].get("fit") is None or self.pool[i]["fit"] >= self.min_fit]
         self.call("save_leads", {"ids": keep})
+        # staffing-firm jobs fail FT without posting-level sponsorship; route them to the contract track instead
+        c2c = [i for i, j in self.pool.items() if j["gate"] == "staffing_c2c_only"]
+        if c2c and self.rules.get("contract_track", {}).get("enabled"):
+            self.call("save_leads", {"ids": c2c, "track": "c2c"})
         if not self.summary:
-            self.summary = f"{len(keep)} leads saved from {len(self.pool)} postings. " + ("; ".join(notes) if notes else "")
+            n_c2c = sum(1 for j in self.saved if j.get("track") == "c2c")
+            self.summary = (f"{len(keep)} leads saved from {len(self.pool)} postings"
+                            + (f", plus {n_c2c} contract (C2C) leads" if n_c2c else "")
+                            + (f"; {self.duplicates} cross-site duplicates merged" if self.duplicates else "") + ". "
+                            + ("; ".join(notes) if notes else ""))
 
     def result(self):
         new = store.mark_seen([j["url"] for j in self.saved], self.user_id)
@@ -297,5 +398,7 @@ class AgentRun:
         for j in self.pool.values():
             gates[j["gate"]] = gates.get(j["gate"], 0) + 1
         return {"summary": self.summary, "leads": leads, "new_count": len(new),
-                "stats": {"scanned": len(self.pool), "gates": gates, "researched": self.overrides},
+                "stats": {"scanned": len(self.pool), "duplicates_merged": self.duplicates, "gates": gates,
+                          "researched": self.overrides,
+                          "tracks": {t: sum(1 for j in self.saved if j.get("track") == t) for t in ("ft", "c2c")}},
                 "trace": self.trace, "provider": PROVIDER}

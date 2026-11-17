@@ -18,10 +18,10 @@ the example profile only. No hardcoded locations, titles or industries in code: 
 ## Architecture (backend/)
 | File | Role |
 |---|---|
-| `main.py` | FastAPI app. `/search` (classic pipeline), `/agent/run` (`hours` = 24 daily / 168 weekly), `/leads?format=json\|csv\|xlsx`, `/export/sheets`, `/export`, `/feedback`, `/parse-resume`, `/usage`, `/health`. Loads `backend/.env` via python-dotenv |
-| `agent_service.py` | Agent loop. Tools: `search_jobs`, `research_company_h1b`, `set_company_signal`, `score_jobs`, `save_leads`, `finish`. Providers: `LLM_PROVIDER=openai` (Ollama/Groq/Gemini, OpenAI-compatible), `anthropic`, or `none` (deterministic `_plan()` with the same tools). System prompt is filled from the profile. Small models: args are coerced and the plan runs as fallback if the LLM stops without saving |
+| `main.py` | FastAPI app. `/agent/start` + `/agent/jobs/{id}` (background run, used by the UI), `/agent/run` (sync, CLI/tests; `hours` = 24 daily / 168 weekly; optional `filters` = per-run overrides, see In-app filters), `/profile/filters` (profile defaults for the UI), `/search` (classic pipeline), `/leads?format=json\|csv\|xlsx`, `/export/sheets`, `/export`, `/feedback`, `/parse-resume`, `/usage`, `/health`. Loads `backend/.env`. Security middleware (see Security) |
+| `agent_service.py` | Agent loop. Cross-site dedupe (`dedupe_key`: company + title + city; text of duplicate copies is merged so any disclaimer still blocks). Plan researches unverified companies by best potential score, routes staffing jobs to the C2C track. h1bdata research is per year (last + current) and cached with expiry. Tools: `search_jobs`, `research_company_h1b`, `set_company_signal`, `score_jobs`, `save_leads`, `finish`. Providers: `LLM_PROVIDER=openai` (Ollama/Groq/Gemini, OpenAI-compatible), `anthropic`, or `none` (deterministic `_plan()` with the same tools). System prompt is filled from the profile. Small models: args are coerced and the plan runs as fallback if the LLM stops without saving |
 | `rules.example.json` | Committed profile template. Users copy it to `rules.json` (gitignored). Load order: env `RULES_JSON` -> env `RULES_PATH` -> `rules.json` -> `rules.example.json` |
-| `rules_service.py` | Gate: title -> geo -> recency -> (if `visa.enabled`) posting visa language -> staffing firm (`staffing_c2c_only`) -> company H1B tier. Sets `job["gate"]` = `pass` or a reason. `load_rules()` merges per-user `rules.local.json` (persisted research; never overrides manual tiers) |
+| `rules_service.py` | Gate: title -> geo -> future date -> recency -> (if `visa.enabled`) posting visa language (`No`/`Yes`/`Transfer`/`Unknown`; `Transfer` passes only with `visa.mode = h1b_transfer`) -> staffing firm (`staffing_c2c_only`) -> company H1B tier. Sets `job["gate"]` = `pass` or a reason. `load_rules()` merges per-user `rules.local.json` (persisted research; never overrides manual tiers) |
 | `free_sources.py` | JobSpy (each title x profile locations + remote US, deduped by URL, per-call timeout) + Greenhouse/Lever/Ashby public JSON + Workday (`slug: "tenant.wdN/site"`; serialized + 429 backoff) |
 | `scraper_service.py` | Legacy: JSearch, Adzuna (keys), Remotive. Owns `normalize()` (shared job shape) |
 | `fit_service.py` | `score_lead()`: 0-100 lead score (weights in profile `scoring`), drives ranking + `hot_lead`. `keyword_fit()`: separate resume keyword coverage; `fit=None` when no JD text (unknown, not zero) |
@@ -33,16 +33,33 @@ the example profile only. No hardcoded locations, titles or industries in code: 
 
 Frontend: `frontend/index.html` (vanilla JS). Buttons: Search, Run Agent (+ Daily/Weekly window), Leads CSV/XLSX, Google Sheet.
 
+## In-app filters (any user, no file editing)
+The UI's **Search filters** panel prefills from `GET /profile/filters` and, once saved, is stored in that browser only
+and sent with each run as `filters`. `rules_service.apply_filters()` overlays it on a fresh copy of the profile:
+- `titles`: replaces the role family (`core_title_terms`/`fallback_titles` cleared; exclusion words that appear in a title dropped). ATS/Workday search phrases come from `search_queries()` (shortest distinct titles).
+- `locations` ("City, ST") + `remote_ok`: geography terms are derived (city, full state name, ", ST"). No locations = anywhere.
+- `visa`: `none` (no visa checks) | `new_sponsorship` | `h1b_transfer`. `sponsors_only` = company must be a confirmed Strong/Moderate H-1B sponsor (else unknown companies pass with fewer H1B points).
+- `industries` (highest first -> score tiers 15, 13, 11...), `exclude_companies`.
+Nothing role-specific is hardcoded: the default role family lives in the profile's `core_title_terms`.
+
+## Security
+- `API_TOKEN` env: when set, every endpoint except `/` and `/health` requires `Authorization: Bearer <token>` (the UI has a token field under Connection settings). **Any internet-facing deployment must set it.** Without it, anyone can start runs, read leads and append to your Sheet.
+- `ALLOWED_ORIGINS` env (CORS, default `*`). Input limits on every request model; one agent run at a time (HTTP 429 otherwise); resume uploads capped at 5 MB / 20 pages and must be a PDF; server errors are logged, clients get a generic message.
+- Untrusted scraped text: the UI escapes everything and only opens `http(s)` links (plus a CSP). CSV/XLSX cells starting with `= + - @` are prefixed with `'`. Sheets appends use `RAW` (never parsed as formulas).
+- Dependencies: `pip-audit` runs in `run_live_test.sh`; requirement minimums are the first versions with no known CVEs. Keep them current.
+- Single-tenant for now: one token = full access. Per-user auth is on the roadmap.
+
 ## Run / test
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt -r tests/requirements-dev.txt
 cp backend/rules.example.json backend/rules.json   # then edit your profile
 cp backend/.env.example backend/.env               # optional: Sheets + LLM settings
 .venv/bin/python tests/test_agent.py          # offline, mocked sources; must print ALL OK
-bash run_live_test.sh                          # live sources -> logs/
+bash run_live_test.sh                          # audit + offline + live sources -> logs/
+cd backend && ../.venv/bin/python smoke_test.py --quick   # live sources + H1B filter checks, ~2 min
 cd backend && ../.venv/bin/uvicorn main:app --reload   # API on :8000
 ```
-Env: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `ANTHROPIC_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON or a path to the key file), `SHEET_ID`, `DB_PATH`, `RULES_PATH`, `RULES_JSON`, `RULES_LOCAL_PATH`, `JOBSPY_PROXIES`, `JOBSPY_TIMEOUT`, `AGENT_MAX_STEPS`.
+Env: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `ANTHROPIC_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON or a path to the key file), `SHEET_ID`, `DB_PATH`, `RULES_PATH`, `RULES_JSON`, `RULES_LOCAL_PATH`, `API_TOKEN`, `ALLOWED_ORIGINS`, `JOBSPY_PROXIES`, `JOBSPY_TIMEOUT`, `AGENT_MAX_STEPS`.
 
 ## How to work in this repo
 - **Diff-only edits scoped to the named function.** Never regenerate whole files.
@@ -62,11 +79,8 @@ Env: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `ANTHROPIC_API_
 - Full agent run with all JobSpy sites ~10-20 min. Small local LLMs (llama3.1 8B) don't drive the tools reliably; the deterministic plan does the work.
 
 ## Roadmap (priority order)
-1. Cross-source dedupe: the same job arrives from Indeed/Glassdoor/LinkedIn with different URLs (~half of live leads). Key on normalized company + title + city.
-2. Agent runtime: too slow for a synchronous `/agent/run` on a free host. Background job, or fewer LinkedIn calls.
-3. Dice for the C2C track; the deterministic plan only runs FT, so staffing-firm jobs are excluded rather than routed.
-4. Research prioritization: the plan researches the first 5 unverified companies alphabetically; rank by passing-job score instead.
-5. Contact finding (contact points in the score are always 0 today).
-6. Recency hardening: reject future/aggregator dates.
-7. Multi-user: auth + Postgres (Supabase free), per-user profiles/resume, job queue, rate-limited shared fetch cache.
-8. Optional LLM JD-vs-resume gap analysis for top leads only (token budget).
+1. Dice (or another free contract board) for the C2C track. Staffing-firm jobs found by the FT search are routed to C2C already.
+2. Contact finding (contact points in the score are always 0 today). Free + safe options are limited; avoid logged-in LinkedIn scraping.
+3. Multi-user: per-user auth (replace the single API_TOKEN), Postgres (Supabase free), per-user profiles/resume, job queue, shared fetch cache.
+4. LinkedIn rate limits (~15 x 429 per run): optional proxies (`JOBSPY_PROXIES`) or fewer LinkedIn pages.
+5. Optional LLM JD-vs-resume gap analysis for top leads only (token budget).
