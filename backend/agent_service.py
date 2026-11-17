@@ -153,6 +153,12 @@ class AgentRun:
                     self._gate(kept, kept.get("hours", hours), kept.get("track", track))
                 continue
             self._gate(j, hours, track)
+            # a terminally-gated job (title/geo/recency/posting-visa-language) is never re-gated or
+            # re-read again -- drop its description to keep a full run's memory footprint bounded.
+            # Keep it for anything that can still change: pass (may get re-saved/merged), company_unverified
+            # /company_risk (may be upgraded by set_company_signal), staffing_c2c_only (re-gated on the c2c track).
+            if j["gate"] not in ("pass", "company_unverified", "company_risk", "staffing_c2c_only"):
+                j["description"] = ""
             self._urls.add(j["url"])
             self._keys[key] = j["id"]
             self._title_idx.setdefault(key[:2], []).append(j["id"])

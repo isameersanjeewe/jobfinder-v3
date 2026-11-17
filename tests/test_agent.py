@@ -109,6 +109,22 @@ assert agent_service.AgentRun(resume, user_id="dy").search_jobs("ats")["gate_cou
 agent_service.fetch_ats = _fx
 print("RECENCY: 168h passes 5-day-old job, 24h rejects it")
 
+# memory: a terminally-gated job's description is dropped from the pool (never re-read again);
+# a job whose gate can still change (pass / company_unverified / staffing_c2c_only) keeps it
+off_title = J("Warehouse Associate","Globex","Austin, TX",today,"long JD text here")
+passer = J("Senior Product Manager","Globex","Austin, TX",today,"saas", u="https://x/pass1")
+unverified = J("Senior Product Manager","Mystery Startup","Austin, TX",today,"saas", u="https://x/unver1")
+agent_service.fetch_ats = lambda boards, companies=None, queries=None: [off_title, passer, unverified]
+mem_run = agent_service.AgentRun(resume, user_id="mem"); mem_run.search_jobs("ats")
+by_title = {j["title"]: j for j in mem_run.pool.values()}
+assert by_title["Warehouse Associate"]["gate"] == "title" and by_title["Warehouse Associate"]["description"] == ""
+assert by_title["Senior Product Manager"] is not None  # the Globex "pass" copy
+for j in mem_run.pool.values():
+    if j["gate"] in ("pass", "company_unverified"):
+        assert j["description"], f"description dropped for re-gateable gate {j['gate']}"
+agent_service.fetch_ats = _fx
+print("MEMORY: terminally-gated jobs drop description, re-gateable ones keep it")
+
 # staffing-firm rule: FT fails unless the posting confirms sponsorship; C2C passes
 apex = J("Product Manager - II","Apex Systems","Austin, TX",today,"data platform roadmap")
 assert rules_service.apply_gate(dict(apex), rules, 24, "ft")["gate"] == "staffing_c2c_only"
