@@ -206,6 +206,19 @@ free_sources.fetch_jobspy(["Product Manager"], "", 24, sites=["indeed"], locatio
 assert seen_locs == [("Austin, TX", False), ("Denver, CO", False), ("United States", True)], seen_locs
 del sys.modules["jobspy"]
 
+# LinkedIn (rate-limit-prone) is queried only for an explicit location + remote US, not every
+# profile location; the other sites still get the full fan-out
+seen_sites = []
+sys.modules["jobspy"] = types.SimpleNamespace(
+    scrape_jobs=lambda **k: seen_sites.append((k["location"], tuple(k["site_name"]))) or DF())
+free_sources.fetch_jobspy(["Product Manager"], "", 24, sites=["indeed", "linkedin"],
+                          locations=["Austin, TX", "Denver, CO"])
+assert seen_sites == [
+    ("Austin, TX", ("indeed",)), ("Denver, CO", ("indeed",)), ("United States", ("indeed", "linkedin")),
+], seen_sites
+del sys.modules["jobspy"]
+print("JOBSPY: LinkedIn location-limited to cut 429s OK")
+
 # a hung JobSpy call is abandoned, not allowed to freeze the run
 import time as _t
 assert free_sources._with_timeout(lambda x: x * 2, 1, x=21) == 42

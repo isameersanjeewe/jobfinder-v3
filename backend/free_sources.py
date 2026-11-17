@@ -48,7 +48,10 @@ def fetch_jobspy(keywords: list[str], location: str = "", hours: int = 24,
                  sites: list[str] | None = None, results: int = 50, remote: bool = False,
                  proxies: list[str] | None = None, locations: list[str] | None = None) -> list[dict]:
     """One JobSpy call per keyword x location (given location + profile locations + remote US).
-    Unquoted search terms (quotes made Indeed/Glassdoor return almost nothing). Deduped by URL."""
+    Unquoted search terms (quotes made Indeed/Glassdoor return almost nothing). Deduped by URL.
+    LinkedIn's guest search rate-limits hard per IP (~15 x HTTP 429/run): queried only for the
+    caller's explicit location and the remote-US sweep, not every profile location. The other
+    sites get the full location fan-out."""
     try:
         from jobspy import scrape_jobs
     except ImportError:
@@ -57,13 +60,17 @@ def fetch_jobspy(keywords: list[str], location: str = "", hours: int = 24,
     # (location, is_remote) pairs: caller's location, each profile location, then remote US (always searched)
     locs = list(dict.fromkeys(([(location, remote)] if location else []) +
                               [(l, False) for l in (locations or [])] + [("United States", True)]))
+    li_locs = ({(location, remote)} if location else set()) | {("United States", True)}
     jobs, seen = [], set()
     for kw in keywords[:4]:
         for loc, is_rem in locs:
+            site_list = sites if (loc, is_rem) in li_locs else [s for s in sites if s != "linkedin"]
+            if not site_list:
+                continue
             try:
                 df = _with_timeout(
                     scrape_jobs, JOBSPY_TIMEOUT,
-                    site_name=sites,
+                    site_name=site_list,
                     search_term=kw,
                     google_search_term=f"{kw} jobs {'remote' if is_rem else loc} since yesterday",
                     location=loc,

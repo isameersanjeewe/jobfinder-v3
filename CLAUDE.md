@@ -75,12 +75,17 @@ Env: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `ANTHROPIC_API_
 ## Source behavior (live, 2026-11)
 - Employer boards incl. Workday: ~3,400 jobs/run; Workday is serialized + throttled (~55s total), the rest ~2s.
 - JobSpy per title x location: Indeed ~25, LinkedIn ~90 (expect ~15 x HTTP 429 per run without proxies), Glassdoor ~40. Google empty, ZipRecruiter 403 (upstream). Calls can hang on a socket: guarded by `JOBSPY_TIMEOUT` (120s).
+- LinkedIn is now queried only for an explicit search location + the remote-US sweep, not every profile location (`free_sources.fetch_jobspy`) -- cuts LinkedIn call volume roughly in proportion to profile location count. The other JobSpy sites still get the full location fan-out. Actual post-change 429 rate not yet confirmed live; re-check with `JOBSPY_PROXIES` unset before relying on it.
 - Workday rate-limits per IP across tenants. Its list API gives only "Posted N Days Ago"; exact dates/locations/deadline come from the detail call (fetched for jobs <= 7 days old).
 - Full agent run with all JobSpy sites ~10-20 min. Small local LLMs (llama3.1 8B) don't drive the tools reliably; the deterministic plan does the work.
 
 ## Roadmap (priority order)
 1. Dice (or another free contract board) for the C2C track. Staffing-firm jobs found by the FT search are routed to C2C already.
+   Investigated 2026-11: Dice has no working public API (`job-search-api.svc.dhigroupinc.com` 403s on the stale public
+   key found in its JS bundle); only option is scraping its public search-results page (no login, but fragile to
+   frontend changes and likely against ToS). Deliberately skipped for now -- revisit only with a clear free API, or if
+   the user decides the scrape-and-accept-risk trade-off is worth it.
 2. Contact finding (contact points in the score are always 0 today). Free + safe options are limited; avoid logged-in LinkedIn scraping.
 3. Multi-user: per-user auth (replace the single API_TOKEN), Postgres (Supabase free), per-user profiles/resume, job queue, shared fetch cache.
-4. LinkedIn rate limits (~15 x 429 per run): optional proxies (`JOBSPY_PROXIES`) or fewer LinkedIn pages.
-5. Optional LLM JD-vs-resume gap analysis for top leads only (token budget).
+4. Optional LLM JD-vs-resume gap analysis for top leads only (token budget).
+5. If LinkedIn 429s are still high after the location-limiting above, add optional proxies (`JOBSPY_PROXIES`) or drop LinkedIn's `results_wanted`.
