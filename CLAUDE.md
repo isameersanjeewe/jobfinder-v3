@@ -34,7 +34,7 @@ the example profile only. No hardcoded locations, titles or industries in code: 
 | `smoke_test.py` | Live check of every real source |
 | `filter_service.py`, `ai_service.py` | v3 classic pipeline (keyword H1B, Claude match). Kept for `/search` |
 
-Frontend: `frontend/index.html` (vanilla JS). Login gate (passcode, session token in `localStorage`, sent as `X-Session-Token` on every request) before the existing UI. Buttons: Search, Run Agent (+ Daily/Weekly window), Leads CSV/XLSX, Google Sheet, Send feedback (opens a pre-filled GitHub issue on the public repo; unrelated to the per-lead thumbs up/down `/feedback` endpoint).
+Frontend: `frontend/index.html` (vanilla JS). Login gate (passcode, session token in `localStorage`, sent as `X-Session-Token` on every request) before the existing UI. Buttons: Manual search, Run Full Search (+ Daily/Weekly window -- labeled "Full Search" in the UI as of 2026-11-18, not "Agent": it's a synchronous, deterministic multi-step pipeline by default, see "Is this actually agentic?" below), Leads CSV/XLSX, Google Sheet, Send feedback (opens a pre-filled GitHub issue on the public repo; unrelated to the per-lead thumbs up/down `/feedback` endpoint).
 
 ## Multi-user
 Added 2026-11-17, replacing the single shared `API_TOKEN` = one global user model noted as a gap in Security
@@ -138,16 +138,92 @@ Add a tester: `cd backend && python add_user.py <user_id> <passcode>`, then give
 - Workday rate-limits per IP across tenants. Its list API gives only "Posted N Days Ago"; exact dates/locations/deadline come from the detail call (fetched for jobs <= 7 days old).
 - Full agent run with all JobSpy sites ~10-20 min. Small local LLMs (llama3.1 8B) don't drive the tools reliably; the deterministic plan does the work.
 
-## Roadmap (priority order)
-1. Dice (or another free contract board) for the C2C track. Staffing-firm jobs found by the FT search are routed to C2C already.
-   Investigated 2026-11: Dice has no working public API (`job-search-api.svc.dhigroupinc.com` 403s on the stale public
-   key found in its JS bundle); only option is scraping its public search-results page (no login, but fragile to
-   frontend changes and likely against ToS). Deliberately skipped for now -- revisit only with a clear free API, or if
-   the user decides the scrape-and-accept-risk trade-off is worth it.
-2. Contact finding (contact points in the score are always 0 today). Free + safe options are limited; avoid logged-in LinkedIn scraping.
-3. ~~Multi-user~~ done 2026-11-17 -- see "Multi-user" section above. Still open under that umbrella: a real profile-editing UI
-   (today a user's persisted profile can only be set via `store.save_profile()`/a future `POST /profile`, not the frontend --
-   the in-app filters panel still only does its existing per-run overlay), and watching whether the private data repo's
-   free Actions minutes (2,000/mo, private) ever becomes a real constraint (flagged, not yet a problem at current scale).
-4. Optional LLM JD-vs-resume gap analysis for top leads only (token budget).
-5. If LinkedIn 429s are still high after the location-limiting above, add optional proxies (`JOBSPY_PROXIES`) or drop LinkedIn's `results_wanted`.
+## Is "Run Full Search" actually agentic? (2026-11-18)
+Honest answer: **not as deployed.** No `LLM_PROVIDER` is set on Render, so every click runs `agent_service.py`'s
+deterministic `_plan()` fallback -- a fixed-order pipeline (search -> research unverified companies -> score ->
+save -> finish), not a model choosing anything. Even with an LLM configured it would only be mildly agentic: one
+bounded tool-call loop per click, no initiative, no operation over time. Renamed the user-facing button/copy from
+"Run Agent" to "Run Full Search" to stop overclaiming (frontend/index.html, this file) -- `agent_service.py`,
+`AgentRun`, and the `/agent/*` endpoints were deliberately left as-is (internal naming, real rename risk for zero
+user-facing benefit, touches the private-repo workflow contract). The real agentic piece belongs in a genuinely
+separate component -- see "Agent (true automation)" below, not yet built.
+
+## Agent (true automation) -- design, not yet built (2026-11-18)
+What actually makes something "agentic" in the sense the user meant: operating with initiative over time without
+being asked each time, and proactively telling the user something worth their attention. That's a different
+shape of problem from "Run Full Search," and should be a new, separate, opt-in component, not a rename of the
+existing button.
+
+**Design:**
+- **Opt-in per user**, configured in-app: enable/disable, a check interval (e.g. every 6h/12h/24h), and
+  optionally their own LLM provider + API key (BYO -- see below).
+- **Scheduling infra**: reuse what's already built, don't invent new infra. Render's free plan can't run a
+  reliable background cron (sleeps when idle). The private data repo (`docs/MULTI_USER_SETUP.md`) already has a
+  GitHub Actions workflow per user-triggered run; add ONE additional scheduled workflow (fixed cron, e.g. hourly)
+  that iterates over every user with Agent enabled, checks whether their chosen interval has elapsed, and if so
+  runs `scripts/run_for_user.py` for them (same script Full Search already uses) -- zero new infra, one new
+  workflow file.
+- **BYO LLM key, not a shared one**: each user who wants their scheduled runs to be genuinely LLM-driven (real
+  tool-selection, not the deterministic fallback) supplies their own key from a free-tier provider (Groq +
+  an open-source model recommended -- see below). This is the only design that keeps the shared deployment's
+  cost at exactly $0 regardless of how many users enable Agent mode, since each person's LLM usage is billed
+  (or free-tier-limited) on their own account, not the owner's.
+  - **New responsibility this introduces**: unlike every other secret in this project (always typed by a human
+    into a dashboard, never stored by the app), a per-user LLM key has to persist server-side to run unattended
+    on a schedule. Store it with the same care as a passcode hash -- never log it, never return it from any read
+    endpoint, and prefer encrypting it at rest (not just relying on DB access control) given it's a live,
+    usable credential sitting in storage, unlike a passcode hash which is one-way.
+- **Alerts, browser first**: Web Push (service worker + push subscription per device, self-generated VAPID
+  keypair -- no external account needed, genuinely free) sent from the scheduled workflow when a run finds a
+  new hot lead. Email is real extra surface (a transactional email provider account, another credential) --
+  deliberately deferred; browser push covers the core "tell me when something good shows up" need without it.
+- **What decides "worth alerting"**: a simple hot-lead-count threshold is a fine v1 (no LLM needed for this
+  part even in LLM-driven mode) -- don't over-build judgment logic here before the basic loop is proven.
+
+**Why this design** (validated, not just proposed): it correctly separates "I search when I ask" (Full Search,
+free, synchronous, already built) from "it watches and tells me" (Agent, opt-in, autonomous, BYO-cost) -- which
+is the actual distinction users mean by "agent" vs. "tool." It reuses 100% of existing infra (private data repo,
+run_for_user.py, the data_repo.py pattern) rather than inventing a new automation substrate. And it sequences
+correctly: push notifications before email, because push is free-by-construction and email isn't.
+
+**Recommended LLM for BYO**: Groq, serving an open-source model (Llama 3.3 70B or newer) -- free tier, no card,
+OpenAI-compatible (zero new code, `LLM_PROVIDER=openai` + `LLM_BASE_URL` already supports it), and plenty
+accurate for the scoped tasks below (structured extraction + short-form writing, not frontier reasoning).
+
+## Roadmap (priority order, updated 2026-11-18)
+1. **Wire feedback into scoring.** Thumbs up/down (`POST /feedback`) currently only affects the legacy
+   `/search` pipeline (`ai_service.apply_feedback_boost`) -- `fit_service.score_lead()`, what actually scores
+   Full Search leads, never looks at it. Today it's functionally decorative for the main workflow. Fix: downweight/
+   upweight future leads by company and title pattern based on accumulated feedback signals.
+2. **Fix resume fit scoring.** `fit_service.keyword_fit()` does percentage-of-matched-terms against a small fixed
+   120-term SKILLS list -- when a JD only mentions 2-3 of those terms, one match/miss swings the score 33-50
+   points, which reads as "random" even though it's deterministic. Fix with an LLM JD-vs-resume gap analysis for
+   top leads only (token/rate-limit budget), via the BYO Groq key above -- falls back to the current keyword
+   method when no key is configured.
+3. **Contact finding.** `contact_points` in the score is always 0 today. Free + safe option: a deep-link
+   generator to a company's LinkedIn People-tab search (pre-filled query), not logged-in scraping.
+4. **Sponsorship-question answer bank**, keyed to the user's visa mode (new sponsorship vs. transfer), surfaced
+   per lead -- a consistent, pre-written answer to the near-universal ATS screening question, not improvised
+   per application.
+5. **Auto-reject-on-sponsorship company flag**, separate from the existing LCA-tier `company_signal`. Source
+   from accumulated `posting_visa == "No"` detections per company (the regex detector already exists) rather
+   than one posting's language -- a company flag is different signal from a single posting's language.
+6. **Growing H1B company-signal database.** Today `research_company_h1b` researches a company fresh (or from
+   the user's own `rules.local.json`) every time it's unknown. Make the result durable and shared: write every
+   research result into the same persistent store the multi-user leads/users data already uses (the private
+   data repo), so the database only ever grows, and a new lookup checks that accumulated store *before*
+   re-researching -- "suggest from what we already know" instead of starting cold each time. This is the
+   natural next step on top of the per-user data_repo.py pattern already built, not a new subsystem.
+7. **Draft outreach notes in-app**, via the BYO LLM key -- never auto-send, consistent with the existing rule
+   that this project never submits applications or sends messages on the user's behalf.
+8. **Agent (true automation)** -- see full design above. The biggest item here; everything above (1-7) should
+   land first since the Agent's scheduled runs just reuse the same scoring/matching/contact/outreach pipeline.
+9. Dice (or another free contract board) for the C2C track. Investigated 2026-11: no working public API
+   (`job-search-api.svc.dhigroupinc.com` 403s on a stale key) -- only option is scraping its results page, fragile
+   and likely against ToS. Deliberately skipped; revisit only with a real free API or if the scrape-risk trade-off
+   is accepted.
+10. A real profile-editing UI (today a saved profile can only be set via `store.save_profile()`, not the
+    frontend -- the in-app filters panel still only does its per-run overlay). Watch whether the private data
+    repo's free Actions minutes (2,000/mo, private) ever become a real constraint once Agent (item 8) adds
+    scheduled runs on top of on-demand ones -- not yet a problem at current scale.
+11. If LinkedIn 429s climb again, add optional proxies (`JOBSPY_PROXIES`) or drop LinkedIn's `results_wanted`.

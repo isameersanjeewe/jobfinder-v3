@@ -194,10 +194,10 @@ main { padding:20px 24px; min-width:0; }
 <div class="shell">
   <aside>
     <div class="card agent">
-      <div class="section-label"><span>Agent</span><span>recommended</span></div>
-      <p class="hint" style="margin-bottom:10px">Searches your profile's boards, checks H1B sponsorship, scores and saves only new, eligible leads.</p>
+      <div class="section-label"><span>Full Search</span><span>recommended</span></div>
+      <p class="hint" style="margin-bottom:10px">Searches your profile's boards, checks H1B sponsorship, scores and saves only new, eligible leads. A thorough multi-source run, not an autonomous agent -- it runs exactly when you click it.</p>
       <div class="row">
-        <button class="btn agent" id="agent-btn" type="button">✦ Run Agent</button>
+        <button class="btn agent" id="agent-btn" type="button">✦ Run Full Search</button>
         <select id="agent-hours" title="Recency window" aria-label="Recency window">
           <option value="24">24 hours</option>
           <option value="168">7 days</option>
@@ -229,7 +229,7 @@ main { padding:20px 24px; min-width:0; }
         <button class="btn-sm" id="f-save" type="button">Save filters</button>
         <button class="btn-sm" id="f-reset" type="button">Use profile</button>
       </div>
-      <p class="hint" style="margin-top:6px">Saved only in this browser and sent with each agent run.</p>
+      <p class="hint" style="margin-top:6px">Saved only in this browser and sent with each search run.</p>
     </details>
 
     <div class="card">
@@ -308,7 +308,7 @@ main { padding:20px 24px; min-width:0; }
       <div class="empty-state">
         <div class="empty-icon">⌕</div>
         <div class="empty-title">Ready when you are</div>
-        <div class="empty-sub">Run the agent for today's eligible leads, or open Manual search for a quick keyword search.</div>
+        <div class="empty-sub">Run Full Search for today's eligible leads, or open Manual search for a quick keyword search.</div>
       </div>
     </div>
   </main>
@@ -494,11 +494,11 @@ function showAgentResult(data) {
 
 async function runAgent() {
   const btn = $("agent-btn"), status = $("agent-status");
-  btn.disabled = true; btn.textContent = "Agent working…";
+  btn.disabled = true; btn.textContent = "Searching…";
   const body = { resume_text: resumeText, hours: parseInt($("agent-hours").value, 10) };
   const f = savedFilters();
   if (f) body.filters = f;
-  empty("", "Agent is running", "Searching boards, checking H1B sponsorship, scoring and saving new leads. Large runs take several minutes.", true);
+  empty("", "Search is running", "Searching boards, checking H1B sponsorship, scoring and saving new leads. Large runs take several minutes.", true);
   const t0 = Date.now(), tick = setInterval(() => { status.textContent = `Running… ${Math.round((Date.now() - t0) / 1000)}s`; }, 1000);
   try {
     let res = await postJSON("/agent/start", body), data = await res.json();
@@ -519,11 +519,11 @@ async function runAgent() {
       }
     }
     status.textContent = `Done in ${Math.round((Date.now() - t0) / 1000)}s`;
-    toast(`Agent finished: ${view.jobs.length} leads.`);
+    toast(`Search finished: ${view.jobs.length} leads.`);
   } catch (e) {
-    empty("⚠", "Agent failed", e.message); status.textContent = ""; toast(e.message, true);
+    empty("⚠", "Search failed", e.message); status.textContent = ""; toast(e.message, true);
   } finally {
-    clearInterval(tick); btn.disabled = false; btn.textContent = "✦ Run Agent";
+    clearInterval(tick); btn.disabled = false; btn.textContent = "✦ Run Full Search";
   }
 }
 
