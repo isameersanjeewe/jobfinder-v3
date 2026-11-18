@@ -14,9 +14,13 @@
 import datetime, json, os, re, requests
 from scraper_service import fetch_remotive
 from free_sources import fetch_jobspy, fetch_ats
-from rules_service import load_rules, apply_gate, save_company_signal, search_queries
-from fit_service import keyword_fit, score_lead
+from rules_service import (load_rules, apply_gate, save_company_signal, search_queries,
+                            record_no_sponsorship, sponsorship_answer)
+from fit_service import keyword_fit, score_lead, llm_gap_fit, llm_configured
+from contacts import linkedin_people_url
 import store
+
+LLM_FIT_TOP_N = int(os.getenv("LLM_FIT_TOP_N", "5"))  # roadmap item 2: LLM gap-fit budget, top leads only
 
 PROVIDER = os.getenv("LLM_PROVIDER", "none").lower()
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5-5" if PROVIDER == "anthropic" else "llama3.1")
@@ -105,6 +109,13 @@ class AgentRun:
         self.saved: list[dict] = []
         self.trace: list[dict] = []
         self.summary = ""
+        # roadmap item 1: this user's accumulated thumbs up/down, by company + title pattern (see
+        # fit_service.feedback_bias). Loaded once per run -- a run never sees feedback submitted mid-run.
+        self.feedback_signals = store.feedback_signal_counts(self.user_id)
+        # roadmap item 5: postings this run saw explicitly say "no sponsorship", by company, deduped by
+        # URL. Flushed into the shared, durable auto-reject counter once at run end (result()) -- not
+        # applied live within this same run, so a company can only flip to auto-reject starting next run.
+        self._no_sponsorship_hits: dict[str, set] = {}
 
     # ── tools ────────────────────────────────────────────────────────────────
     def _gate(self, job, hours, track):
@@ -114,6 +125,10 @@ class AgentRun:
             job["company_h1b"] = sig
             if job["posting_visa"] != "No":
                 job["gate"] = "pass" if sig in ("Strong", "Moderate") else f"company_{sig.lower()}"
+        if track == "ft" and job.get("posting_visa") == "No" and job.get("company"):
+            # roadmap item 5: accumulate this run's explicit no-sponsorship detections per company,
+            # deduped by URL -- flushed to the shared, durable auto-reject store at run end (result()).
+            self._no_sponsorship_hits.setdefault(job["company"].lower(), set()).add(job.get("url", ""))
         return job
 
     def search_jobs(self, source, keywords=None, location="", hours=None, remote=False, track="ft"):
@@ -238,14 +253,28 @@ class AgentRun:
     def score_jobs(self, ids):
         out = []
         bt, pt = self.rules["industry_boost"]["terms"], self.rules["industry_boost"]["penalty_terms"]
+        scored = []
         for i in ids:
             j = self.pool.get(i)
             if not j:
                 continue
             j.update(keyword_fit(j, self.resume, self.resume_years, bt, pt))
-            j.update(score_lead(j, self.rules))
+            j["fit_source"] = "keyword"
+            j.update(score_lead(j, self.rules, self.feedback_signals))
+            j["contact_link"] = linkedin_people_url(j.get("company", ""), j.get("title", ""))  # item 3
+            j["sponsorship_answer"] = sponsorship_answer(self.rules)  # item 4
+            scored.append((i, j))
+        # roadmap item 2: LLM JD-vs-resume gap read for the top-scoring passing leads only (token/rate-limit
+        # budget) -- falls back to keyword_fit's result (already set above) when no BYO key is configured.
+        if self.resume and llm_configured():
+            top = sorted((t for t in scored if t[1]["gate"] == "pass"), key=lambda t: -(t[1].get("score") or 0))[:LLM_FIT_TOP_N]
+            for i, j in top:
+                refined = llm_gap_fit(j, self.resume)
+                if refined:
+                    j.update(refined)
+        for i, j in scored:
             out.append({"id": i, "title": j["title"], "company": j["company"], "score": j["score"],
-                        "hot_lead": j["hot_lead"], "fit": j["fit"],
+                        "hot_lead": j["hot_lead"], "fit": j["fit"], "fit_source": j.get("fit_source", "keyword"),
                         "missing": j["missing"][:5], "years_gap": j["years_gap"]})
         return {"scores": out}
 
@@ -262,7 +291,9 @@ class AgentRun:
                 and self.pool[i]["url"] not in saved_urls]
         for j in jobs:
             if "score" not in j:  # LLM may save without scoring first
-                j.update(score_lead(j, self.rules))
+                j.update(score_lead(j, self.rules, self.feedback_signals))
+            j.setdefault("contact_link", linkedin_people_url(j.get("company", ""), j.get("title", "")))
+            j.setdefault("sponsorship_answer", sponsorship_answer(self.rules))
         added = store.save_leads(jobs, track, self.user_id)
         self.saved += jobs
         return {"saved": len(jobs), "new_in_tracker": added, "rejected_not_passing": len(ids) - len(jobs)}
@@ -396,6 +427,14 @@ class AgentRun:
                             + ("; ".join(notes) if notes else ""))
 
     def result(self):
+        # roadmap item 5: flush this run's accumulated no-sponsorship detections into the shared, durable
+        # auto-reject counter -- one write per company seen (not per posting). Applies starting next run.
+        for co, urls in self._no_sponsorship_hits.items():
+            if urls:
+                try:
+                    record_no_sponsorship(co, len(urls))
+                except OSError:
+                    pass  # read-only disk (e.g. some hosts): keep in-run signal only, matches set_company_signal
         new = store.mark_seen([j["url"] for j in self.saved], self.user_id)
         for j in self.saved:
             j["is_new"] = j["url"] in new

@@ -34,11 +34,21 @@ visa need: none / new H-1B sponsorship / H-1B transfer, sponsors-only, industrie
   role-specific confirmation on the posting; otherwise they fail FT (`staffing_c2c_only`) and belong on the C2C track.
 - An explicit no-sponsorship or citizenship line on a posting always excludes, regardless of company tier.
 - Thin volume (~2-6 LCAs/yr) excludes even large companies. An exact title-level LCA match is the strongest signal.
-- Manual tiers in the profile win over automated research. Research results persist per user in `rules.local.json`
-  (re-checked after 90 days; Unverified after 7). h1bdata.info must be queried per year: an "all years" query returns
-  no table for large employers, which used to look like zero filings.
+- Manual tiers in the profile win over automated research. Research results persist in `rules.local.json`'s
+  `company_signals` map (re-checked after 90 days; Unverified after 7) and, when the private data repo is configured
+  (see CLAUDE.md "Multi-user"), durably write through to and read back from `data/_company_signals.json` there --
+  one shared, growing database of everything the app has ever learned about a company, read *before* re-researching.
+  h1bdata.info must be queried per year: an "all years" query returns no table for large employers, which used to
+  look like zero filings.
 - Thresholds on recent yearly volume: >= 100 Strong; >= 20 (or >= 10 with a same-title filing) Moderate; 1-9 Risk; 0 Unverified.
 - Company stage: prefer Series B+ or large enterprises with immigration counsel; very small companies = Risk by default.
+- **Auto-reject flag**, separate from the LCA tier above: a company's own postings explicitly saying no
+  sponsorship accumulate (deduped by URL, across runs) in that same per-company record. Once a company crosses
+  `AUTO_REJECT_THRESHOLD` (default 2), `company_auto_reject` excludes its future postings even when a given
+  posting's own text says nothing about sponsorship, and even if its LCA tier is Strong -- these are deliberately
+  independent signals (a company can file plenty of LCAs company-wide while still refusing sponsorship for this
+  specific role family). Only takes effect starting the run *after* the threshold is crossed, never retroactively
+  within the run that crossed it.
 
 ## Scoring model (implemented in `fit_service.score_lead`, weights in profile `scoring`)
 | Factor | Weight | Scoring |
@@ -48,10 +58,16 @@ visa need: none / new H-1B sponsorship / H-1B transfer, sponsors-only, industrie
 | Geography | 15 | In the profile's area or remote US 15, other 0 |
 | Industry priority | 15 | Profile's `industry_priority` tiers (15 ... 5); no match = `opportunistic_points` |
 | Contact found | 10 | Hiring-influence contact 10, recruiter only 6, none 0 |
+| Feedback bias | +/-10 | Accumulated thumbs up/down (`/feedback`) by company and by title pattern (seniority-stripped), +3/-3 per net company signal, +2/-2 per net title-pattern signal, clamped |
 
-Hot Lead = score >= `hot_threshold` (65). Never pad results with weak matches.
-Override: a JD asking for GenAI/agentic AI product work AND regulated/compliance experience gets full industry points.
-`fit` (resume keyword coverage) is a separate column; it does not drive ranking.
+Hot Lead = score >= `hot_threshold` (65). Total score is clamped to 0-100 after the feedback bias. Never pad
+results with weak matches. Override: a JD asking for GenAI/agentic AI product work AND regulated/compliance
+experience gets full industry points. `fit` (resume keyword coverage, or an LLM JD-vs-resume gap read on the
+top-scoring passing leads when a BYO LLM key is configured) is a separate column; it does not drive ranking.
+
+Each lead also carries a LinkedIn People-tab contact-search deep link (not a verified contact -- doesn't affect
+`contact_points`) and the pre-written sponsorship-question answer for the user's `visa.mode`. "Draft outreach"
+in the UI generates (never sends) a short note via the same BYO LLM key, or a template with no network call.
 
 ## Tracker rules
 - The user's Google Sheet is canonical. **Append, never recreate**. Dedupe by job link.

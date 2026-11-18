@@ -23,6 +23,9 @@ def _conn():
         user_id TEXT PRIMARY KEY, passcode_salt TEXT, passcode_hash TEXT, created_at TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS profiles (
         user_id TEXT PRIMARY KEY, rules_json TEXT, updated_at TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS feedback (
+        user_id TEXT, url TEXT, company TEXT, title TEXT, signal TEXT, updated_at TEXT,
+        PRIMARY KEY (user_id, url))""")
     return c
 
 
@@ -137,6 +140,45 @@ def save_leads(jobs: list[dict], track: str = "ft", user_id: str = "default") ->
         c.executemany("INSERT OR IGNORE INTO leads VALUES (?,?,?,?,?,?)",
                       [(user_id, j["url"], track, json.dumps(j), now, "Not Applied") for j in jobs if j.get("url")])
         return c.total_changes - before
+
+
+# ── feedback (roadmap item 1: wires thumbs up/down into fit_service.score_lead) ──────────────────────
+# Local SQLite only (same durability tier leads/seen have before the private-repo setup in
+# docs/MULTI_USER_SETUP.md -- see CLAUDE.md "Multi-user"). Per-user, unlike the legacy global
+# feedback_store dict in main.py (kept as-is for the old /search pipeline it still drives).
+def save_feedback(user_id: str, url: str, company: str, title: str, signal: str) -> None:
+    """signal="" removes the record (the UI toggles a thumb off by re-sending the same signal)."""
+    with _conn() as c:
+        if signal:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            c.execute(
+                "INSERT INTO feedback (user_id, url, company, title, signal, updated_at) VALUES (?,?,?,?,?,?) "
+                "ON CONFLICT(user_id, url) DO UPDATE SET company=excluded.company, title=excluded.title, "
+                "signal=excluded.signal, updated_at=excluded.updated_at",
+                (user_id, url, company, title, signal, now))
+        else:
+            c.execute("DELETE FROM feedback WHERE user_id=? AND url=?", (user_id, url))
+
+
+def feedback_signal_counts(user_id: str) -> dict:
+    """Aggregated thumbs up/down counts by company and by title pattern, for fit_service.feedback_bias().
+    Recomputed from the raw rows on every call -- a handful of rows per tester, no need for a running
+    aggregate. {"company": {name_lower: {"up": n, "down": n}}, "title": {pattern: {"up": n, "down": n}}}."""
+    from rules_service import _SENIORITY  # local import: avoids a hard import-time dependency on rules_service
+    companies: dict[str, dict[str, int]] = {}
+    titles: dict[str, dict[str, int]] = {}
+    with _conn() as c:
+        rows = c.execute("SELECT company, title, signal FROM feedback WHERE user_id=?", (user_id,)).fetchall()
+    for company, title, signal in rows:
+        if signal not in ("up", "down"):
+            continue
+        co = (company or "").strip().lower()
+        if co:
+            companies.setdefault(co, {"up": 0, "down": 0})[signal] += 1
+        tp = _SENIORITY.sub("", (title or "").strip().lower())
+        if tp:
+            titles.setdefault(tp, {"up": 0, "down": 0})[signal] += 1
+    return {"company": companies, "title": titles}
 
 
 def list_leads(user_id: str = "default", since: str = "", track: str = "") -> list[dict]:

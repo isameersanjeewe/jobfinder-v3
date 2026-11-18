@@ -22,19 +22,21 @@ the example profile only. No hardcoded locations, titles or industries in code: 
 | `auth.py` | Passcode hashing (stdlib `hashlib.pbkdf2_hmac`, no new dependency) + signed session tokens (`SESSION_SECRET`-HMAC'd `user_id:expiry`, not a JWT -- avoids adding PyJWT). `make_session_token()` / `verify_session_token()` |
 | `add_user.py` | Owner-run CLI, no self-serve signup: `python add_user.py <user_id> <passcode>` creates/resets a tester's passcode in the `users` table (see Multi-user) |
 | `data_repo.py` | Optional Render-side GitHub API client for the private data repo (see Multi-user): reads `data/<user_id>/leads.json` via the Contents API, triggers/polls the agent run via `workflow_dispatch`. Inert (`enabled()` is `False`) unless `DATA_REPO_TOKEN`/`DATA_REPO` are set -- until then everything runs exactly as before, in-process against local SQLite |
-| `agent_service.py` | Agent loop. Cross-site dedupe (`dedupe_key`: company + title + city; text of duplicate copies is merged so any disclaimer still blocks). Plan researches unverified companies by best potential score, routes staffing jobs to the C2C track. h1bdata research is per year (last + current) and cached with expiry. Tools: `search_jobs`, `research_company_h1b`, `set_company_signal`, `score_jobs`, `save_leads`, `finish`. Providers: `LLM_PROVIDER=openai` (Ollama/Groq/Gemini, OpenAI-compatible), `anthropic`, or `none` (deterministic `_plan()` with the same tools). System prompt is filled from the profile. Small models: args are coerced and the plan runs as fallback if the LLM stops without saving |
+| `agent_service.py` | Agent loop. Cross-site dedupe (`dedupe_key`: company + title + city; text of duplicate copies is merged so any disclaimer still blocks). Plan researches unverified companies by best potential score, routes staffing jobs to the C2C track. h1bdata research is per year (last + current) and cached with expiry. Tools: `search_jobs`, `research_company_h1b`, `set_company_signal`, `score_jobs`, `save_leads`, `finish`. Providers: `LLM_PROVIDER=openai` (Ollama/Groq/Gemini, OpenAI-compatible), `anthropic`, or `none` (deterministic `_plan()` with the same tools). System prompt is filled from the profile. Small models: args are coerced and the plan runs as fallback if the LLM stops without saving. `AgentRun` loads this user's accumulated `/feedback` signals once per run (item 1) and accumulates this run's posting-level no-sponsorship detections, flushed to the shared company DB at run end (item 5, applies starting next run). `score_jobs()`/`save_leads()` attach `contact_link` (item 3) and `sponsorship_answer` (item 4) to every scored/saved lead, and refine `fit`/`fit_source` for the top `LLM_FIT_TOP_N` passing leads via `fit_service.llm_gap_fit()` (item 2) |
 | `rules.example.json` | Committed profile template. Users copy it to `rules.json` (gitignored), or (multi-user) get it as their default until they have a saved profile row. Load order: per-user saved profile (if `user_id` given and found) -> env `RULES_JSON` -> env `RULES_PATH` -> `rules.json` -> `rules.example.json` |
-| `rules_service.py` | Gate: title -> geo -> future date -> recency -> (if `visa.enabled`) posting visa language (`No`/`Yes`/`Transfer`/`Unknown`; `Transfer` passes only with `visa.mode = h1b_transfer`) -> staffing firm (`staffing_c2c_only`) -> company H1B tier. Sets `job["gate"]` = `pass` or a reason. `load_rules(user_id=...)` prefers that user's saved profile (`store.profiles`) over the file-based one, and still merges per-user `rules.local.json` (persisted research; never overrides manual tiers) |
+| `rules_service.py` | Gate: title -> geo -> future date -> recency -> (if `visa.enabled`) **auto-reject company flag** (item 5) -> posting visa language (`No`/`Yes`/`Transfer`/`Unknown`; `Transfer` passes only with `visa.mode = h1b_transfer`) -> staffing firm (`staffing_c2c_only`) -> company H1B tier. Sets `job["gate"]` = `pass` or a reason. `load_rules(user_id=...)` prefers that user's saved profile (`store.profiles`) over the file-based one, and still merges per-user `rules.local.json` (persisted research; never overrides manual tiers). `save_company_signal()`/`record_no_sponsorship()` write through to the shared, durable `data/_company_signals.json` in the private data repo when configured (item 6); `sync_company_signals_from_repo()` pulls it back on startup. `sponsorship_answer()` is the item-4 answer bank |
 | `free_sources.py` | JobSpy (each title x profile locations + remote US, deduped by URL, per-call timeout) + Greenhouse/Lever/Ashby public JSON + Workday (`slug: "tenant.wdN/site"`; serialized + 429 backoff) |
 | `scraper_service.py` | Legacy: JSearch, Adzuna (keys), Remotive. Owns `normalize()` (shared job shape) |
-| `fit_service.py` | `score_lead()`: 0-100 lead score (weights in profile `scoring`), drives ranking + `hot_lead`. `keyword_fit()`: separate resume keyword coverage; `fit=None` when no JD text (unknown, not zero) |
-| `store.py` | SQLite (`DB_PATH`): `leads` + `seen` tables keyed by `user_id` (drives "only new leads"); `users` (passcode auth) + `profiles` (per-user rules.json override) tables added for multi-user, see below. Local cache/mirror, not the durable store once the private data repo is set up (see Multi-user) |
+| `fit_service.py` | `score_lead()`: 0-100 lead score (weights in profile `scoring`) + feedback bias (see Roadmap item 1), drives ranking + `hot_lead`. `keyword_fit()`: free resume keyword coverage; `fit=None` when no JD text (unknown, not zero). `llm_gap_fit()`: optional BYO-key LLM JD-vs-resume gap read for top leads only (item 2), falls back to `keyword_fit()`. `llm_configured()` is the one check every LLM-touching feature (this file, `outreach.py`) makes before calling out |
+| `contacts.py` | `linkedin_people_url()`: deep link to a company's LinkedIn People-tab search, pre-filled (item 3). No scraping, no login, no stored contact data |
+| `outreach.py` | `draft_outreach()`: drafts a short outreach note (item 7) via the BYO LLM key, or a deterministic template with zero network calls when none is configured. Generates only -- never sends; the user copies and sends it themselves |
+| `store.py` | SQLite (`DB_PATH`): `leads` + `seen` tables keyed by `user_id` (drives "only new leads"); `users` (passcode auth) + `profiles` (per-user rules.json override) + `feedback` (thumbs up/down, item 1) tables added for multi-user, see below. Local cache/mirror, not the durable store once the private data repo is set up (see Multi-user) |
 | `export_service.py` | CSV, XLSX, Google Sheets append (service account, append-only, maps to the tab's existing headers, dedupe by job link) |
 | `run_agent.py` | CLI for cron. `.github/workflows/daily-agent.yml` runs it on weekdays (set `RULES_JSON` as a repo secret) |
 | `smoke_test.py` | Live check of every real source |
 | `filter_service.py`, `ai_service.py` | v3 classic pipeline (keyword H1B, Claude match). Kept for `/search` |
 
-Frontend: `frontend/index.html` (vanilla JS). Login gate (passcode, session token in `localStorage`, sent as `X-Session-Token` on every request) before the existing UI. Buttons: Manual search, Run Full Search (+ Daily/Weekly window -- labeled "Full Search" in the UI as of 2026-11-18, not "Agent": it's a synchronous, deterministic multi-step pipeline by default, see "Is this actually agentic?" below), Leads CSV/XLSX, Google Sheet, Send feedback (opens a pre-filled GitHub issue on the public repo; unrelated to the per-lead thumbs up/down `/feedback` endpoint).
+Frontend: `frontend/index.html` (vanilla JS). Login gate (passcode, session token in `localStorage`, sent as `X-Session-Token` on every request) before the existing UI. Buttons: Manual search, Run Full Search (+ Daily/Weekly window -- labeled "Full Search" in the UI as of 2026-11-18, not "Agent": it's a synchronous, deterministic multi-step pipeline by default, see "Is this actually agentic?" below), Leads CSV/XLSX, Google Sheet, Send feedback (opens a pre-filled GitHub issue on the public repo; unrelated to the per-lead thumbs up/down `/feedback` endpoint). Each Full Search row has a "⋯" expander (items 3/4/7): a LinkedIn contact deep link, the sponsorship-answer-bank text with Copy, and a "Draft outreach" button that calls `/outreach/draft` and shows the draft in a read-only textarea with its own Copy button -- never auto-sends anything. A "✦" by the Fit column marks an LLM-refined fit (item 2, only when a BYO key is configured).
 
 ## Multi-user
 Added 2026-11-17, replacing the single shared `API_TOKEN` = one global user model noted as a gap in Security
@@ -114,7 +116,7 @@ bash run_live_test.sh                          # audit + offline + live sources 
 cd backend && ../.venv/bin/python smoke_test.py --quick   # live sources + H1B filter checks, ~2 min
 cd backend && ../.venv/bin/uvicorn main:app --reload   # API on :8000
 ```
-Env: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `ANTHROPIC_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON or a path to the key file), `SHEET_ID`, `DB_PATH`, `RULES_PATH`, `RULES_JSON`, `RULES_LOCAL_PATH`, `API_TOKEN`, `ALLOWED_ORIGINS`, `JOBSPY_PROXIES`, `JOBSPY_TIMEOUT`, `AGENT_MAX_STEPS`, `SESSION_SECRET`, `SESSION_DAYS` (multi-user session tokens, see Multi-user), `DATA_REPO_TOKEN`, `DATA_REPO`, `DATA_REPO_WORKFLOW`, `DATA_REPO_BRANCH` (optional private-repo persistence, see Multi-user and `docs/MULTI_USER_SETUP.md`).
+Env: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `ANTHROPIC_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON or a path to the key file), `SHEET_ID`, `DB_PATH`, `RULES_PATH`, `RULES_JSON`, `RULES_LOCAL_PATH`, `API_TOKEN`, `ALLOWED_ORIGINS`, `JOBSPY_PROXIES`, `JOBSPY_TIMEOUT`, `AGENT_MAX_STEPS`, `SESSION_SECRET`, `SESSION_DAYS` (multi-user session tokens, see Multi-user), `DATA_REPO_TOKEN`, `DATA_REPO`, `DATA_REPO_WORKFLOW`, `DATA_REPO_BRANCH` (optional private-repo persistence, see Multi-user and `docs/MULTI_USER_SETUP.md`), `LLM_FIT_TOP_N` (default 5, roadmap item 2), `LLM_FIT_TIMEOUT`, `LLM_OUTREACH_TIMEOUT` (item 7), `AUTO_REJECT_THRESHOLD` (default 2, item 5).
 
 Add a tester: `cd backend && python add_user.py <user_id> <passcode>`, then give them the app's URL + their user_id + passcode (no self-serve signup). See `docs/MULTI_USER_SETUP.md`.
 
@@ -190,34 +192,58 @@ correctly: push notifications before email, because push is free-by-construction
 OpenAI-compatible (zero new code, `LLM_PROVIDER=openai` + `LLM_BASE_URL` already supports it), and plenty
 accurate for the scoped tasks below (structured extraction + short-form writing, not frontier reasoning).
 
-## Roadmap (priority order, updated 2026-11-18)
-1. **Wire feedback into scoring.** Thumbs up/down (`POST /feedback`) currently only affects the legacy
+## Roadmap (priority order, updated 2026-11-18; items 1-7 landed 2026-11-18)
+1. **DONE. Wire feedback into scoring.** Thumbs up/down (`POST /feedback`) used to only affect the legacy
    `/search` pipeline (`ai_service.apply_feedback_boost`) -- `fit_service.score_lead()`, what actually scores
-   Full Search leads, never looks at it. Today it's functionally decorative for the main workflow. Fix: downweight/
-   upweight future leads by company and title pattern based on accumulated feedback signals.
-2. **Fix resume fit scoring.** `fit_service.keyword_fit()` does percentage-of-matched-terms against a small fixed
-   120-term SKILLS list -- when a JD only mentions 2-3 of those terms, one match/miss swings the score 33-50
-   points, which reads as "random" even though it's deterministic. Fix with an LLM JD-vs-resume gap analysis for
-   top leads only (token/rate-limit budget), via the BYO Groq key above -- falls back to the current keyword
-   method when no key is configured.
-3. **Contact finding.** `contact_points` in the score is always 0 today. Free + safe option: a deep-link
-   generator to a company's LinkedIn People-tab search (pre-filled query), not logged-in scraping.
-4. **Sponsorship-question answer bank**, keyed to the user's visa mode (new sponsorship vs. transfer), surfaced
-   per lead -- a consistent, pre-written answer to the near-universal ATS screening question, not improvised
-   per application.
-5. **Auto-reject-on-sponsorship company flag**, separate from the existing LCA-tier `company_signal`. Source
-   from accumulated `posting_visa == "No"` detections per company (the regex detector already exists) rather
-   than one posting's language -- a company flag is different signal from a single posting's language.
-6. **Growing H1B company-signal database.** Today `research_company_h1b` researches a company fresh (or from
-   the user's own `rules.local.json`) every time it's unknown. Make the result durable and shared: write every
-   research result into the same persistent store the multi-user leads/users data already uses (the private
-   data repo), so the database only ever grows, and a new lookup checks that accumulated store *before*
-   re-researching -- "suggest from what we already know" instead of starting cold each time. This is the
-   natural next step on top of the per-user data_repo.py pattern already built, not a new subsystem.
-7. **Draft outreach notes in-app**, via the BYO LLM key -- never auto-send, consistent with the existing rule
-   that this project never submits applications or sends messages on the user's behalf.
-8. **Agent (true automation)** -- see full design above. The biggest item here; everything above (1-7) should
-   land first since the Agent's scheduled runs just reuse the same scoring/matching/contact/outreach pipeline.
+   Full Search leads, never looked at it. Fixed: `store.py` has a `feedback` table (`save_feedback()` /
+   `feedback_signal_counts()`, per-user, local SQLite -- same durability tier leads/seen have before the
+   private-repo setup); `fit_service.feedback_bias()` turns accumulated company + title-pattern (seniority-
+   stripped) up/down counts into a +/-10-clamped adjustment folded into `score_lead()`'s 0-100 total (new
+   `score_parts.feedback`). `AgentRun` loads the calling user's signals once per run. `/feedback` persists
+   per-user when the caller has a session (every Full Search UI call does); the legacy global `feedback_store`
+   is untouched, so `/search` behaves exactly as before.
+2. **DONE. Fix resume fit scoring.** `fit_service.keyword_fit()`'s small fixed 120-term SKILLS list made one
+   match/miss swing the score 33-50 points. Fixed: `fit_service.llm_gap_fit()` is an optional BYO-key LLM
+   JD-vs-resume gap read (same `LLM_PROVIDER`/`LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` pattern as
+   `agent_service.py`'s header -- no new provider abstraction), applied in `AgentRun.score_jobs()` to only the
+   top `LLM_FIT_TOP_N` (default 5) passing leads per run. No key configured (this deployment's current state)
+   -> `llm_configured()` is False -> `keyword_fit()`'s result is used untouched, zero network calls. Each
+   scored lead now carries `fit_source` ("llm" or "keyword"); the UI marks LLM-refined fits with "✦".
+3. **DONE. Contact finding.** `contacts.linkedin_people_url()` builds a deep link to a company's LinkedIn
+   People-tab search, pre-filled with the company name plus a hiring-relevant role hint from the job title.
+   No login, no scraping, no stored contact data. Attached to every scored/saved lead as `contact_link`;
+   does **not** change scoring -- `contact_points` stays 0 until there's a way to confirm an actual named
+   contact, which this deliberately isn't.
+4. **DONE. Sponsorship-question answer bank.** `rules_service.sponsorship_answer()`, keyed to `visa.mode`
+   (`new_sponsorship` vs. `h1b_transfer`; `None` when `visa.enabled=false`), with an optional per-profile
+   override (`visa.sponsorship_answer` in `rules.json`). Attached to every scored/saved lead as
+   `sponsorship_answer`; the UI shows it with a Copy button.
+5. **DONE. Auto-reject-on-sponsorship company flag.** Separate from the existing LCA-tier `company_signal`.
+   `AgentRun` accumulates this run's `posting_visa == "No"` detections per company (deduped by URL) and
+   flushes them into the shared company-signal store at run end via `rules_service.record_no_sponsorship()`,
+   which sets `auto_reject=true` once a company crosses `AUTO_REJECT_THRESHOLD` (default 2) -- *starting next
+   run*, not retroactively within the same run. `apply_gate()` checks `company_auto_reject()` first in the FT
+   visa branch, producing a new `company_auto_reject` gate reason distinct from `posting_no_sponsorship`
+   (single posting) and `company_risk`/`company_excluded` (LCA tier) -- a company can auto-reject regardless
+   of its LCA signal or this specific posting's own wording.
+6. **DONE. Growing H1B company-signal database.** This was the single most important item to get right.
+   The per-company record (`rules.local.json`'s `company_signals` map -- already a single global file, so
+   already shared across users in one deployment) now also durably write-throughs to the private data repo at
+   `data/_company_signals.json` (same pattern as `data/_users.json`) on every `save_company_signal()` /
+   `record_no_sponsorship()` call, and `sync_company_signals_from_repo()` pulls it back at backend startup
+   (alongside `store.sync_users_from_repo()`) -- so a freshly redeployed Render instance (local disk wiped)
+   doesn't start research/auto-reject cold. LCA tier (`signal`/`basis`/`date`) and posting-level accumulation
+   (`no_sponsorship_count`/`auto_reject`) live in the *same* per-company record (one source of truth per
+   company) -- `save_company_signal()` merges rather than replaces so neither clobbers the other. This is
+   optional/inert exactly like the rest of Multi-user: unconfigured, it's the same single local file as
+   before, just now also fed by `record_no_sponsorship()`.
+7. **DONE. Draft outreach notes in-app.** `outreach.draft_outreach()`, BYO LLM key (same pattern as item 2)
+   or a deterministic template with zero network calls when none is configured -- drafting must never
+   require payment. **Generates only, never sends** -- `POST /outreach/draft` returns the text; the UI shows
+   it in a read-only textarea with a Copy button. Consistent with the existing hard rule that this project
+   never submits applications or sends messages for the user.
+8. **Agent (true automation)** -- see full design above. The biggest item here; everything above (1-7) landed
+   2026-11-18, so the Agent's scheduled runs can reuse the same scoring/matching/contact/outreach pipeline.
 9. Dice (or another free contract board) for the C2C track. Investigated 2026-11: no working public API
    (`job-search-api.svc.dhigroupinc.com` 403s on a stale key) -- only option is scraping its results page, fragile
    and likely against ToS. Deliberately skipped; revisit only with a real free API or if the scrape-risk trade-off

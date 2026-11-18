@@ -72,6 +72,8 @@
     "mode": "new_sponsorship",
     "_mode_note": "new_sponsorship = you need a new H-1B petition. h1b_transfer = you already hold an H-1B: postings that refuse NEW sponsorship but accept change-of-employer (transfer) petitions stay in.",
     "require_company_confirmed": true,
+    "_sponsorship_answer_note": "Optional: set 'sponsorship_answer' to override the pre-written answer the app surfaces per lead for the near-universal ATS screening question ('will you require sponsorship?'). Unset = the built-in wording for your mode above.",
+    "sponsorship_answer": "",
     "posting_no_patterns": [
       "no sponsorship",
       "sponsorship not available",

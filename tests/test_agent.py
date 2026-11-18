@@ -327,6 +327,12 @@ assert gt["gate"] == "pass" and gt["posting_visa"] == "Transfer" and score_lead(
 assert rules_service.apply_gate(dict(tr, company="Brandnew Widgets"), tm, 24)["gate"] == "company_unverified"  # tier still applies
 print(f"H1B FILTER: {len(VISA_CASES)} phrasings, transfer mode, long-JD disclaimer, future dates OK")
 
+# Reset the shared local store before reusing "Initech" as a generic no-sponsorship fixture below: earlier
+# sections above already fed it several accumulated posting_visa=="No" detections (roadmap item 5), which
+# would otherwise auto-reject it here and break tests that aren't about that feature (see AUTO-REJECT
+# section near the end of this file for item 5's own dedicated, isolated tests).
+if os.path.exists("/tmp/test_rules.local.json"): os.remove("/tmp/test_rules.local.json")
+
 # cross-site dedupe: same job from 3 boards -> 1 lead; a no-sponsorship line on any copy blocks it
 DUPS = [J("Senior Product Manager","Globex","Austin, TX",today,"saas roadmap",u="https://globex.example/careers/1"),
         J("Senior Product Manager","Globex Inc.","Austin, TX, USA",today,"saas",u="https://indeed.example/1"),
@@ -629,5 +635,235 @@ finally:
     data_repo.DATA_REPO_TOKEN, data_repo.DATA_REPO = "", ""
 assert data_repo.enabled() is False
 print("DATA_REPO: contents fetch, dispatch, run lookup/status, /agent/start remote path mocked OK (no real GitHub calls)")
+
+# ═══ Roadmap items 1-7 (2026-11-18 push: wire feedback into scoring, LLM resume fit, contact finding,
+# sponsorship answer bank, auto-reject company flag, durable shared H1B company DB, outreach drafting) ═══
+import fit_service, contacts, outreach
+from urllib.parse import unquote
+
+# ── item 1: thumbs up/down (/feedback) wired into fit_service.score_lead, not just the legacy /search pipeline ──
+store.save_feedback("fb_u1", "https://x/fb1", "Acme FeedbackCo", "Senior Product Manager", "up")
+store.save_feedback("fb_u1", "https://x/fb2", "Acme FeedbackCo", "Product Manager", "up")
+sig = store.feedback_signal_counts("fb_u1")
+assert sig["company"]["acme feedbackco"] == {"up": 2, "down": 0}
+assert sig["title"]["product manager"] == {"up": 2, "down": 0}  # "Senior " stripped -> same pattern as "Product Manager"
+
+fb_job = rules_service.apply_gate(J("Product Manager", "Acme FeedbackCo", "Austin, TX", today, "saas"), rules, 24)
+base_fb = score_lead(dict(fb_job), rules)
+boosted_fb = score_lead(dict(fb_job), rules, sig)
+assert base_fb["score_parts"]["feedback"] == 0  # no signals passed -> unchanged, exactly today's behavior
+assert boosted_fb["score_parts"]["feedback"] == 10 and boosted_fb["score"] - base_fb["score"] == 10  # 2*3 (company) + 2*2 (title)
+
+store.save_feedback("fb_u1", "https://x/fb3", "Nope Co", "Data Analyst", "down")
+down_sig = store.feedback_signal_counts("fb_u1")
+assert down_sig["title"]["data analyst"] == {"up": 0, "down": 1}
+down_job = rules_service.apply_gate(J("Data Analyst", "Nope Co", "Austin, TX", today, "saas"), rules, 24)
+assert score_lead(dict(down_job), rules, down_sig)["score_parts"]["feedback"] == -5  # -1*3 (company) + -1*2 (title)
+
+store.save_feedback("fb_u1", "https://x/fb1", "Acme FeedbackCo", "Senior Product Manager", "")  # toggle off (undo)
+sig3 = store.feedback_signal_counts("fb_u1")
+assert sig3["company"]["acme feedbackco"] == {"up": 1, "down": 0}
+
+agent_service.fetch_ats = lambda boards, companies=None, queries=None: [
+    J("Product Manager", "Acme FeedbackCo", "Austin, TX", today, "saas", u="https://x/fbrun")]
+agent_service.fetch_jobspy = lambda *a, **k: []
+fb_run = agent_service.AgentRun(resume, user_id="fb_u1")
+fb_run.search_jobs("ats")
+fb_pid = next(iter(fb_run.pool))
+fb_run.score_jobs([fb_pid])
+assert fb_run.pool[fb_pid]["score_parts"]["feedback"] == 5  # AgentRun loads this user's accumulated signals itself
+agent_service.fetch_ats = _fx
+
+r_fb = c.post("/feedback", json={"url": "https://x/epfb1", "title": "Program Manager", "company": "Epsilon Co", "signal": "up"}, headers=AUTH)
+assert r_fb.status_code == 200
+assert store.feedback_signal_counts("api")["company"]["epsilon co"] == {"up": 1, "down": 0}
+assert c.post("/feedback", json={"url": "https://x/epfb2", "signal": "up"}).status_code == 200  # no session: legacy path only, no crash
+print("FEEDBACK: thumbs up/down wired into score_lead by company + title pattern, persisted per-user via /feedback OK")
+
+# ── item 2: optional LLM JD-vs-resume gap fit (BYO key), falls back to keyword_fit with zero network calls ──
+assert fit_service.llm_configured() is False  # no key configured by default -- this deployment has none
+jd_job = J("Senior Product Manager", "Acme Health", "Austin, TX", today,
+           "healthcare data platform sql agile genai 10+ years", u="https://x/llmfit")
+assert fit_service.llm_gap_fit(jd_job, resume) is None  # no key -> caller keeps keyword_fit's result, no network call
+
+fit_service.LLM_PROVIDER, fit_service.LLM_API_KEY = "openai", "test-groq-key"
+class FR:
+    def __init__(s, body): s.body = body
+    def raise_for_status(s): pass
+    def json(s): return {"choices": [{"message": {"content": s.body}}]}
+_fp = fit_service.requests.post
+fit_service.requests.post = lambda *a, **k: FR('{"fit": 82, "matched": ["sql","genai"], "missing": ["kubernetes"], "years_gap": -2}')
+refined = fit_service.llm_gap_fit(jd_job, resume)
+assert refined == {"fit": 82, "matched": ["sql", "genai"], "missing": ["kubernetes"], "years_gap": -2, "fit_source": "llm"}
+fit_service.requests.post = lambda *a, **k: FR("not json at all")        # malformed response -> fallback, never raises
+assert fit_service.llm_gap_fit(jd_job, resume) is None
+fit_service.requests.post = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("network down"))  # call fails -> fallback
+assert fit_service.llm_gap_fit(jd_job, resume) is None
+fit_service.requests.post = lambda *a, **k: FR('{"fit": 99}')
+assert fit_service.llm_gap_fit(dict(jd_job, description=""), resume) is None  # no JD text -> skip the call entirely
+assert fit_service.llm_gap_fit(jd_job, "") is None                            # no resume -> skip the call entirely
+fit_service.requests.post = _fp
+print("LLM FIT: no-key fallback, mocked success, malformed/error/empty-input fallback OK")
+
+agent_service.fetch_ats = lambda boards, companies=None, queries=None: [dict(j) for j in FIX[:4]]
+agent_service.fetch_jobspy = lambda *a, **k: []
+fit_service.LLM_PROVIDER, fit_service.LLM_API_KEY = "openai", "test-groq-key"
+fit_service.requests.post = lambda *a, **k: FR('{"fit": 91, "matched": ["sql"], "missing": [], "years_gap": null}')
+agent_service.LLM_FIT_TOP_N = 1
+llm_run = agent_service.AgentRun(resume, user_id="llmrun")
+llm_run.search_jobs("ats")
+llm_pass_ids = [i for i, j in llm_run.pool.items() if j["gate"] == "pass"]
+llm_run.score_jobs(llm_pass_ids)
+llm_sources = sorted(llm_run.pool[i]["fit_source"] for i in llm_pass_ids)
+assert llm_sources.count("llm") == 1 and llm_sources.count("keyword") == len(llm_pass_ids) - 1, llm_sources
+agent_service.LLM_FIT_TOP_N = 5
+fit_service.LLM_PROVIDER, fit_service.LLM_API_KEY = "none", ""
+fit_service.requests.post = _fp
+agent_service.fetch_ats = _fx
+print("LLM FIT: score_jobs refines only the top-N passing leads, the rest keep keyword_fit OK")
+
+# ── item 3: contact finding -- a LinkedIn People-tab deep link, not scraping -- doesn't change scoring ──
+assert contacts.linkedin_people_url("", "Product Manager") == ""
+url_pm = unquote(contacts.linkedin_people_url("Acme Health", "Senior Product Manager"))
+assert "Acme Health" in url_pm and "head of product" in url_pm.lower()
+url_pgm = unquote(contacts.linkedin_people_url("Acme Health", "Technical Program Manager"))
+assert "program management" in url_pgm.lower()
+url_generic = unquote(contacts.linkedin_people_url("Acme Health", "Data Analyst"))
+assert "recruiter" in url_generic.lower()
+
+agent_service.fetch_ats = lambda boards, companies=None, queries=None: [dict(j) for j in FIX[:4]]
+agent_service.fetch_jobspy = lambda *a, **k: []
+ct_run = agent_service.AgentRun(resume, user_id="contacts")
+ct_run.search_jobs("ats")
+ct_ids = [i for i, j in ct_run.pool.items() if j["gate"] == "pass"]
+ct_run.score_jobs(ct_ids)
+assert all(ct_run.pool[i]["contact_link"].startswith("https://www.linkedin.com/search/") for i in ct_ids)
+assert all(ct_run.pool[i]["score_parts"]["contact"] == 0 for i in ct_ids)  # contact_points scoring untouched
+agent_service.fetch_ats = _fx
+print("CONTACTS: LinkedIn People-tab deep link generator, wired onto scored leads, scoring unchanged OK")
+
+# ── item 4: sponsorship-question answer bank, keyed to visa mode, surfaced per lead ──
+new_sp = rules_service.sponsorship_answer(rules)  # example profile: visa.mode = new_sponsorship
+assert new_sp and "h-1b" in new_sp.lower() and "require" in new_sp.lower()
+xfer_rules = json.loads(json.dumps(rules)); xfer_rules["visa"]["mode"] = "h1b_transfer"
+xfer_sp = rules_service.sponsorship_answer(xfer_rules)
+assert xfer_sp and "transfer" in xfer_sp.lower() and xfer_sp != new_sp
+no_visa_rules = json.loads(json.dumps(rules)); no_visa_rules["visa"]["enabled"] = False
+assert rules_service.sponsorship_answer(no_visa_rules) is None
+override_rules = json.loads(json.dumps(rules)); override_rules["visa"]["sponsorship_answer"] = "Custom wording."
+assert rules_service.sponsorship_answer(override_rules) == "Custom wording."
+
+agent_service.fetch_ats = lambda boards, companies=None, queries=None: [dict(j) for j in FIX[:4]]
+agent_service.fetch_jobspy = lambda *a, **k: []
+sp_run = agent_service.AgentRun(resume, user_id="sponsor_ans", rules=rules)
+sp_run.search_jobs("ats")
+sp_ids = [i for i, j in sp_run.pool.items() if j["gate"] == "pass"]
+sp_run.score_jobs(sp_ids)
+assert all(sp_run.pool[i]["sponsorship_answer"] == new_sp for i in sp_ids)
+agent_service.fetch_ats = _fx
+print("SPONSORSHIP ANSWER: canned answer by visa mode, override, disabled, wired onto scored leads OK")
+
+# ── item 5: auto-reject-on-sponsorship company flag, from accumulated posting-level "No" detections,
+# separate from the LCA-tier company_signal ──
+if os.path.exists("/tmp/test_rules.local.json"): os.remove("/tmp/test_rules.local.json")
+e1 = rules_service.record_no_sponsorship("Repeat Offender LLC", 1)
+assert e1["no_sponsorship_count"] == 1 and e1["auto_reject"] is False
+e2 = rules_service.record_no_sponsorship("Repeat Offender LLC", 1)
+assert e2["no_sponsorship_count"] == 2 and e2["auto_reject"] is True  # AUTO_REJECT_THRESHOLD default 2
+ar_rules = rules_service.load_rules()
+assert rules_service.company_auto_reject("Repeat Offender LLC", ar_rules) is True
+assert rules_service.company_auto_reject("Totally Fine Co", ar_rules) is False
+# a posting at that company with no visa language of its own is still excluded, by company history
+ar_job = rules_service.apply_gate(J("Product Manager", "Repeat Offender LLC", "Austin, TX", today, "saas"), ar_rules, 24)
+assert ar_job["posting_visa"] == "Unknown" and ar_job["gate"] == "company_auto_reject"
+# separate from the LCA company_signal tier: a Strong LCA save doesn't clear (or get cleared by) auto_reject
+rules_service.save_company_signal("Repeat Offender LLC", "Strong", "h1bdata.info")
+ar_rules2 = rules_service.load_rules()
+assert rules_service.company_signal("Repeat Offender LLC", ar_rules2) == "Strong"
+assert rules_service.company_auto_reject("Repeat Offender LLC", ar_rules2) is True
+ar_job2 = rules_service.apply_gate(J("Product Manager", "Repeat Offender LLC", "Austin, TX", today, "saas"), ar_rules2, 24)
+assert ar_job2["gate"] == "company_auto_reject"  # still excluded despite a Strong LCA signal
+
+if os.path.exists("/tmp/test_rules.local.json"): os.remove("/tmp/test_rules.local.json")
+AC = "Accumulating Co"
+hit1 = J("Product Manager", AC, "Austin, TX", today, "We do not offer visa sponsorship.", u="https://x/acc1")
+hit2 = J("Senior Product Manager", AC, "Austin, TX", today, "No visa sponsorship available.", u="https://x/acc2")
+agent_service.fetch_ats = lambda boards, companies=None, queries=None: [hit1, hit2]
+agent_service.fetch_jobspy = lambda *a, **k: []
+acc_run1 = agent_service.AgentRun(resume, user_id="acc1")
+acc_run1.run()
+# within this SAME run, both are still gated by their OWN posting language -- auto-reject wasn't loaded
+# yet (it's based on rules.local.json as of run start, before these hits were flushed)
+assert {j["gate"] for j in acc_run1.pool.values()} == {"posting_no_sponsorship"}
+saved_entry = json.load(open("/tmp/test_rules.local.json"))["company_signals"]["accumulating co"]
+assert saved_entry["no_sponsorship_count"] == 2 and saved_entry["auto_reject"] is True
+clean = J("Product Manager", AC, "Austin, TX", today, "great team, flexible hours", u="https://x/acc3")
+agent_service.fetch_ats = lambda boards, companies=None, queries=None: [clean]
+acc_run2 = agent_service.AgentRun(resume, user_id="acc2")
+acc_run2.run()  # a fresh run: load_rules() now sees the flush from acc_run1 above
+assert acc_run2.pool[next(iter(acc_run2.pool))]["gate"] == "company_auto_reject"
+agent_service.fetch_ats = _fx
+print("AUTO-REJECT: accumulated no-sponsorship history flags a company, separate from LCA tier and single-posting language OK")
+
+# ── item 6: the shared, durable H1B company-signal database -- write-through + read-through to the
+# private data repo at data/_company_signals.json, same pattern as data/_users.json ──
+if os.path.exists("/tmp/test_rules.local.json"): os.remove("/tmp/test_rules.local.json")
+data_repo.DATA_REPO_TOKEN, data_repo.DATA_REPO = "tok", "owner/jobfinder-data"
+_written = {}
+_json_mod = json  # keep a live reference: the fake PUT below takes a `json=` kwarg that shadows the module name
+def _fake_get2(url, headers=None, params=None, timeout=None):
+    if url.endswith("/contents/data/_company_signals.json") and "data/_company_signals.json" in _written:
+        return _FakeResp(200, {"content": base64.b64encode(_json_mod.dumps(_written["data/_company_signals.json"]).encode()).decode()})
+    return _FakeResp(404)
+def _fake_put2(url, headers=None, json=None, timeout=None):
+    assert url.endswith("/contents/data/_company_signals.json")
+    _written["data/_company_signals.json"] = _json_mod.loads(base64.b64decode(json["content"]).decode())
+    return _FakeResp(200)
+_real_get2, _real_put2 = _requests.get, _requests.put
+_requests.get, _requests.put = _fake_get2, _fake_put2
+try:
+    rules_service.save_company_signal("Durable Co", "Moderate", "h1bdata.info")
+    assert _written["data/_company_signals.json"]["durable co"]["signal"] == "Moderate"
+    rules_service.record_no_sponsorship("Durable Co", 2)
+    assert _written["data/_company_signals.json"]["durable co"]["auto_reject"] is True
+    assert _written["data/_company_signals.json"]["durable co"]["signal"] == "Moderate"  # merged, not replaced (item 6)
+    # simulate a freshly redeployed Render instance (local disk wiped): pull the shared store back down
+    # before researching anything cold -- the whole point of item 6
+    os.remove("/tmp/test_rules.local.json")
+    n = rules_service.sync_company_signals_from_repo()
+    assert n == 1
+    pulled = json.load(open("/tmp/test_rules.local.json"))["company_signals"]
+    assert pulled["durable co"]["auto_reject"] is True
+    assert rules_service.load_rules().get("researched", {}).get("durable co", {}).get("auto_reject") is True
+finally:
+    _requests.get, _requests.put = _real_get2, _real_put2
+    data_repo.DATA_REPO_TOKEN, data_repo.DATA_REPO = "", ""
+assert data_repo.enabled() is False
+print("COMPANY DB: write-through + read-through to the shared private-repo store mocked OK (no real GitHub calls)")
+
+# ── item 7: draft outreach notes in-app via the BYO LLM key -- GENERATES ONLY, NEVER SENDS ──
+job_simple = {"title": "Senior Product Manager", "company": "Acme Health", "description": "healthcare data platform sql agile genai"}
+d1 = outreach.draft_outreach(job_simple, resume)
+assert d1["source"] == "template" and "Acme Health" in d1["draft"] and "Senior Product Manager" in d1["draft"]
+
+fit_service.LLM_PROVIDER, fit_service.LLM_API_KEY = "openai", "test-groq-key"
+class OR:
+    def __init__(s, text): s.text_ = text
+    def raise_for_status(s): pass
+    def json(s): return {"choices": [{"message": {"content": s.text_}}]}
+_op = outreach.requests.post
+outreach.requests.post = lambda *a, **k: OR("Hi! Saw your opening and would love to connect about the role.")
+d2 = outreach.draft_outreach(job_simple, resume)
+assert d2["source"] == "llm" and "connect" in d2["draft"].lower()
+outreach.requests.post = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down"))  # drafting never hard-fails
+d3 = outreach.draft_outreach(job_simple, resume)
+assert d3["source"] == "template"
+outreach.requests.post = _op
+fit_service.LLM_PROVIDER, fit_service.LLM_API_KEY = "none", ""
+
+r_out = c.post("/outreach/draft", json={"title": "Product Manager", "company": "Acme Health", "resume_text": resume}, headers=AUTH)
+assert r_out.status_code == 200 and r_out.json()["source"] == "template" and "Acme Health" in r_out.json()["draft"]
+assert c.post("/outreach/draft", json={"title": "x"}).status_code == 401  # requires a session; never sends anything
+print("OUTREACH: template fallback, mocked LLM draft, error fallback, /outreach/draft endpoint OK (never sends)")
 
 print("ALL OK")

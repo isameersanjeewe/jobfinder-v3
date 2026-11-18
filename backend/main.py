@@ -25,11 +25,12 @@ from filter_service   import run_filters
 from ai_service       import enrich_jobs_with_ai, apply_feedback_boost
 from export_service   import to_csv, to_xlsx, append_to_sheet
 from free_sources     import fetch_jobspy, fetch_ats
-from rules_service    import load_rules, apply_gate, apply_filters, profile_filters
+from rules_service    import load_rules, apply_gate, apply_filters, profile_filters, sync_company_signals_from_repo
 from agent_service    import AgentRun
 from fastapi          import Response
 import auth
 import data_repo
+import outreach
 import store
 
 log = logging.getLogger("jobfinder")
@@ -55,11 +56,16 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _hydrate_users_from_data_repo():
-    """Render's free plan wipes local SQLite on every redeploy; pull existing testers' accounts back
-    from the private repo (if configured) before anyone tries to log in. See store.sync_users_from_repo."""
+    """Render's free plan wipes local SQLite/disk on every redeploy; pull existing testers' accounts and
+    the shared H1B company-signal database (roadmap item 6) back from the private repo (if configured)
+    before anyone tries to log in or run a search. See store.sync_users_from_repo and
+    rules_service.sync_company_signals_from_repo."""
     n = store.sync_users_from_repo()
     if n:
         log.info("Loaded %d user(s) from the data repo into the local cache", n)
+    m = sync_company_signals_from_repo()
+    if m:
+        log.info("Loaded %d company signal(s) from the data repo into the local cache", m)
 
 
 @app.middleware("http")
@@ -85,6 +91,13 @@ def current_user(x_session_token: str = Header(default="", alias="X-Session-Toke
     if not user_id:
         raise HTTPException(status_code=401, detail="missing or invalid session token; call /auth/login first")
     return user_id
+
+
+def optional_user(x_session_token: str = Header(default="", alias="X-Session-Token")) -> str:
+    """Like current_user(), but "" instead of a 401 when there's no valid session -- for /feedback,
+    which the legacy unauthenticated /search pipeline's global feedback_store also still uses (see
+    CLAUDE.md roadmap item 1: that global dict is kept for /search; per-user persistence is additive)."""
+    return auth.verify_session_token(x_session_token) or ""
 
 
 MAX_RESUME_BYTES = 5 * 1024 * 1024
@@ -189,6 +202,14 @@ class FeedbackPayload(BaseModel):
     title:    str = Short()
     company:  str = Short()
     signal:   Literal["up", "down", ""]
+
+
+class OutreachParams(BaseModel):
+    title:       str = Short()
+    company:     str = Short()
+    description: str = Field(default="", max_length=8000)
+    resume_text: str = Field(default="", max_length=20000)
+    tone:        Literal["recruiter", "hiring_manager"] = "recruiter"
 
 
 # ── CORE PIPELINE ─────────────────────────────────────────────────────────────
@@ -490,12 +511,16 @@ def export_sheets(p: SheetExport, user_id: str = Depends(current_user)):
 
 
 @app.post("/feedback")
-def feedback(payload: FeedbackPayload):
+def feedback(payload: FeedbackPayload, user_id: str = Depends(optional_user)):
     """
     Stores thumbs up/down for a job.
     'up'   → job will be boosted in future results
     'down' → job will be demoted / hidden
-    Feedback persists for the session (server lifetime).
+    The legacy global feedback_store (server-lifetime only) keeps driving the old /search pipeline's
+    ai_service.apply_feedback_boost exactly as before. When the caller has a valid session (the Full
+    Search UI always does post-login), the same signal is also persisted per-user in store.py and feeds
+    fit_service.score_lead via AgentRun.feedback_signals -- roadmap item 1: feedback that actually
+    changes future Full Search scoring, not just the legacy pipeline.
     """
     if payload.signal:
         if payload.url not in feedback_store and len(feedback_store) >= 5000:
@@ -503,7 +528,24 @@ def feedback(payload: FeedbackPayload):
         feedback_store[payload.url] = payload.signal
     else:
         feedback_store.pop(payload.url, None)
+    if user_id:
+        store.save_feedback(user_id, payload.url, payload.company, payload.title, payload.signal)
     return {"stored": True, "url": payload.url, "signal": payload.signal}
+
+
+@app.post("/outreach/draft")
+def outreach_draft(p: OutreachParams, user_id: str = Depends(current_user)):
+    """Drafts (never sends) a short outreach note for one lead -- roadmap item 7. BYO LLM key (see
+    CLAUDE.md), falls back to a template with zero network calls when none is configured. The user
+    copies this and sends it themselves; this project never submits applications or sends messages for
+    anyone. `description` is optional -- leads returned to the UI have it stripped to keep payloads
+    small (see the 2026-11-16 OOM fix), so a draft from the UI today is title/company/resume only."""
+    try:
+        return outreach.draft_outreach({"title": p.title, "company": p.company, "description": p.description},
+                                        p.resume_text, p.tone)
+    except Exception:
+        log.exception("outreach draft failed")
+        return JSONResponse({"error": "could not draft outreach (see server log)"}, status_code=500)
 
 
 @app.post("/parse-resume")

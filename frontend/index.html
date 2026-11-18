@@ -136,6 +136,13 @@ main { padding:20px 24px; min-width:0; }
 .btn-apply { padding:6px 13px; background:var(--ink); color:var(--bg); border-radius:var(--radius-sm); font-family:var(--display); font-size:11px; font-weight:600; text-decoration:none; white-space:nowrap; transition:filter .15s; }
 .btn-apply:hover { filter:brightness(1.15); }
 
+.job-details td { padding:4px 14px 14px; background:var(--soft); }
+.details-panel { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; font-size:12.5px; }
+.sponsor-answer { flex:1 1 260px; line-height:1.6; }
+.sponsor-answer b { font-weight:600; }
+.outreach-wrap { flex:1 1 260px; display:flex; flex-direction:column; gap:6px; }
+.outreach-draft { width:100%; font-family:inherit; font-size:12.5px; padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--ink); resize:vertical; }
+
 .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:90px 20px; color:var(--muted); text-align:center; gap:7px; }
 .empty-icon { font-size:30px; }
 .empty-title { font-family:var(--display); font-size:17px; font-weight:700; color:var(--ink); }
@@ -405,10 +412,13 @@ function renderJobs() {
     : "Try broader keywords, more sources, or a longer time window.");
   if (!jobs.length) return empty("∅", "No matches", "No results match the current filters.");
   const agent = view.mode === "agent", ai = state.ai;
+  const cols = 5 + (agent || ai ? 1 : 0) + (agent ? 1 : 0);
   const rows = jobs.map(j => {
     const i = view.jobs.indexOf(j), url = safeUrl(j.url), fb = j.feedback || "";
     const score = num(agent ? j.score : j.match);
     const h1b = agent ? j.company_h1b : j.h1b_friendly;
+    const contactUrl = agent ? safeUrl(j.contact_link || "") : "";
+    const hasDetails = agent;  // contact link / sponsorship answer are optional; "Draft outreach" is always offered
     return `<tr class="job-row${fb === "down" ? " disliked" : ""}">
       ${agent || ai ? `<td><div class="score-wrap"><span class="score-num" style="color:${scoreColor(score)}">${score || "—"}</span>
         ${score ? `<div class="bar"><div style="width:${Math.min(100, score)}%;background:${scoreColor(score)}"></div></div>` : ""}
@@ -418,18 +428,27 @@ function renderJobs() {
       <td><span class="tag" title="${esc(j.location)}">${esc(j.location)}</span></td>
       <td><span class="tag ${H1B_CLASS[h1b] || ""}" title="Company sponsorship signal">${esc(h1b || "—")}</span>
           ${agent && j.posting_visa && j.posting_visa !== "Unknown" ? `<div style="margin-top:4px"><span class="tag ${H1B_CLASS[j.posting_visa] || ""}" title="What the posting says">posting: ${esc(j.posting_visa)}</span></div>` : ""}</td>
-      ${agent ? `<td>${j.fit == null ? '<span class="hint">—</span>' : esc(j.fit)}</td>` : ""}
+      ${agent ? `<td>${j.fit == null ? '<span class="hint">—</span>' : esc(j.fit)}${j.fit_source === "llm" ? ' <span class="hint" title="LLM-refined resume fit">✦</span>' : ""}</td>` : ""}
       <td class="nowrap"><div>${esc(j.posted)}</div><div class="job-company" title="${esc(j.source)}">${esc(String(j.source || "").replace(/^(ATS|JobSpy)\//, ""))}</div></td>
       <td><div class="fb-wrap">
         <button type="button" class="fb-btn up" data-fb="${i}" data-signal="up" aria-pressed="${fb === "up"}" title="Good fit" aria-label="Good fit">👍</button>
         <button type="button" class="fb-btn down" data-fb="${i}" data-signal="down" aria-pressed="${fb === "down"}" title="Not for me" aria-label="Not for me">👎</button>
+        ${hasDetails ? `<button type="button" class="btn-sm" data-more="${i}" aria-expanded="false" title="Contact, sponsorship answer, outreach draft">⋯</button>` : ""}
         ${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open →</a>` : ""}</div></td>
-    </tr>`;
+    </tr>${hasDetails ? `<tr class="job-details" id="jd-${i}" hidden><td colspan="${cols}"><div class="details-panel">
+        ${contactUrl ? `<a class="btn-sm" href="${esc(contactUrl)}" target="_blank" rel="noopener noreferrer">🔗 Find contact (LinkedIn)</a>` : ""}
+        ${j.sponsorship_answer ? `<div class="sponsor-answer"><b>Sponsorship answer:</b> ${esc(j.sponsorship_answer)}
+          <button type="button" class="btn-sm" data-copy-sponsor="${i}">Copy</button></div>` : ""}
+        <div class="outreach-wrap">
+          <button type="button" class="btn-sm" data-draft="${i}">✉️ Draft outreach (never sent)</button>
+          <textarea class="outreach-draft" id="draft-${i}" rows="3" hidden readonly></textarea>
+          <button type="button" class="btn-sm" id="copy-draft-${i}" data-copy-draft="${i}" hidden>Copy draft</button>
+        </div></div></td></tr>` : ""}`;
   }).join("");
   $("results").innerHTML = `<div class="table-wrap"><table class="job-table"><thead><tr>
       ${agent || ai ? `<th title="0-100: H1B 35 · Title 25 · Geo 15 · Industry 15 · Contact 10">Score</th>` : ""}
       <th>Role</th><th>Location</th><th title="Company sponsorship signal, and what the posting says">H1B</th>
-      ${agent ? `<th title="Resume keyword fit">Fit</th>` : ""}
+      ${agent ? `<th title="Resume keyword fit (✦ = LLM-refined, when a BYO LLM key is configured)">Fit</th>` : ""}
       <th class="${agent ? "sortable" : ""}" data-sort="posted" title="${agent ? "Click to sort by date" : ""}">Posted</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -440,7 +459,7 @@ function renderChips(stats, extra) {
     chips.push(`<span class="chip">scanned <b>${esc(stats.scanned ?? 0)}</b></span>`);
     if (stats.duplicates_merged) chips.push(`<span class="chip">duplicates merged <b>${esc(stats.duplicates_merged)}</b></span>`);
     const g = stats.gates || {};
-    for (const k of ["posting_no_sponsorship", "company_risk", "company_excluded", "company_unverified", "staffing_c2c_only", "stale_or_undated", "geography"])
+    for (const k of ["posting_no_sponsorship", "company_auto_reject", "company_risk", "company_excluded", "company_unverified", "staffing_c2c_only", "stale_or_undated", "geography"])
       if (g[k]) chips.push(`<span class="chip" title="Filtered out: ${esc(k)}">${esc(k.replace(/_/g, " "))} <b>${esc(g[k])}</b></span>`);
   }
   if (extra) chips.unshift(extra);
@@ -456,6 +475,31 @@ async function sendFeedback(idx, signal) {
   try { await postJSON("/feedback", { url: String(job.url || "").slice(0, 2000), title: String(job.title || "").slice(0, 200),
                                       company: String(job.company || "").slice(0, 200), signal: job.feedback }); }
   catch (e) { toast(e.message, true); }
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast("Copied."); }
+  catch { toast("Could not copy automatically -- select the text and copy it manually.", true); }
+}
+
+// Draft outreach (roadmap item 7): generates text only, never sends anything. BYO LLM key falls back to
+// a template with no network calls when none is configured (see backend/outreach.py).
+async function draftOutreach(idx, btn) {
+  const job = view.jobs[idx];
+  if (!job) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Drafting…";
+  try {
+    const res = await postJSON("/outreach/draft", { title: String(job.title || "").slice(0, 200),
+      company: String(job.company || "").slice(0, 200), resume_text: resumeText }), d = await res.json();
+    if (!res.ok || d.error) throw new Error(d.error || `HTTP ${res.status}`);
+    const ta = $(`draft-${idx}`);
+    ta.value = d.draft; ta.hidden = false;
+    $(`copy-draft-${idx}`).hidden = false;
+    toast(d.source === "llm" ? "Draft generated with your LLM key. Review before sending -- nothing is sent automatically."
+                              : "Draft generated from a template (no LLM key configured). Review before sending.");
+  } catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
 function getParams() {
@@ -725,7 +769,19 @@ $("results").addEventListener("click", e => {
   const fb = e.target.closest("[data-fb]");
   if (fb) return sendFeedback(+fb.dataset.fb, fb.dataset.signal);
   const th = e.target.closest("th[data-sort]");
-  if (th && view.mode === "agent") { view.sort = view.sort === "posted" ? "score" : "posted"; renderJobs(); }
+  if (th && view.mode === "agent") { view.sort = view.sort === "posted" ? "score" : "posted"; renderJobs(); return; }
+  const more = e.target.closest("[data-more]");
+  if (more) {
+    const row = $(`jd-${more.dataset.more}`);
+    if (row) { row.hidden = !row.hidden; more.setAttribute("aria-expanded", String(!row.hidden)); }
+    return;
+  }
+  const copySponsor = e.target.closest("[data-copy-sponsor]");
+  if (copySponsor) { const j = view.jobs[+copySponsor.dataset.copySponsor]; return copyText(j?.sponsorship_answer || ""); }
+  const copyDraft = e.target.closest("[data-copy-draft]");
+  if (copyDraft) { const ta = $(`draft-${copyDraft.dataset.copyDraft}`); return copyText(ta ? ta.value : ""); }
+  const draftBtn = e.target.closest("[data-draft]");
+  if (draftBtn) return draftOutreach(+draftBtn.dataset.draft, draftBtn);
 });
 $("api-url").value = store.get("api_url"); $("api-url").placeholder = apiBase();
 $("api-token").value = store.get("api_token");

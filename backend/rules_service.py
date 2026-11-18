@@ -8,6 +8,7 @@
 
 import json, os, re
 from datetime import datetime, timedelta, timezone
+import data_repo
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 RULES_PATH = os.getenv("RULES_PATH") or next(
@@ -17,6 +18,17 @@ RULES_PATH = os.getenv("RULES_PATH") or next(
 
 RULES_LOCAL_PATH = os.getenv("RULES_LOCAL_PATH", os.path.join(os.path.dirname(__file__), "rules.local.json"))
 _TIER = {"Strong": "strong", "Moderate": "moderate", "Risk": "risk"}
+# Roadmap item 6: the shared, growing H1B company-signal database. Locally this is the same
+# rules.local.json "company_signals" map that already existed (one file per deployment -- already
+# shared across users today since RULES_LOCAL_PATH is a single global path, not per-user). The gap
+# this closes is durability: Render's free web service has no persistent disk, so that file is wiped
+# every redeploy. write-through/read-through to the private data repo's data/_company_signals.json
+# (same pattern as store.py's data/_users.json) makes it durable and shared across redeploys/instances.
+COMPANY_SIGNALS_REPO_PATH = "data/_company_signals.json"
+# Roadmap item 5: a company-level auto-reject flag, separate from the LCA-tier company_signal above --
+# sourced from how many of a company's OWN postings explicitly said no sponsorship, not one posting's
+# language. Threshold overridable for testing/tuning; not exposed in the profile (company-wide signal).
+AUTO_REJECT_THRESHOLD = int(os.getenv("AUTO_REJECT_THRESHOLD", "2"))
 
 
 def _read_local(path: str) -> dict:
@@ -57,17 +69,75 @@ def load_rules(path: str = RULES_PATH, local_path: str | None = None, user_id: s
     return rules
 
 
-def save_company_signal(company: str, signal: str, basis: str = "", local_path: str | None = None) -> dict:
-    """Persist one research result so it's never researched twice. Atomic write."""
-    path = local_path or RULES_LOCAL_PATH
-    data = _read_local(path)
-    entry = {"signal": signal, "basis": basis, "date": datetime.now().strftime("%Y-%m-%d")}
-    data.setdefault("company_signals", {})[company.lower()] = entry
+def _atomic_write(path: str, data: dict) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(data, f, indent=2, sort_keys=True)
     os.replace(tmp, path)
+
+
+def _write_through_company_signals(signals: dict) -> None:
+    """Best-effort durability for the shared company-signal database (roadmap item 6): mirrors the full
+    map into the private data repo at data/_company_signals.json, same pattern as store.py's
+    data/_users.json. No-op when data_repo isn't configured (local-only, exactly today's behavior);
+    data_repo.write_json already swallows/logs its own errors, so a flaky GitHub API call never breaks
+    a run -- the local file (the source apply_gate/research actually read from) is already saved by then."""
+    if data_repo.enabled():
+        data_repo.write_json(COMPANY_SIGNALS_REPO_PATH, signals, "Update company signals")
+
+
+def save_company_signal(company: str, signal: str, basis: str = "", local_path: str | None = None) -> dict:
+    """Persist one research result so it's never researched twice. Atomic local write, merged (not
+    replaced) so an existing no_sponsorship_count/auto_reject (see record_no_sponsorship below) for the
+    same company isn't lost, then best-effort write-through to the shared private-repo store."""
+    path = local_path or RULES_LOCAL_PATH
+    data = _read_local(path)
+    entry = data.setdefault("company_signals", {}).setdefault(company.lower(), {})
+    entry.update(signal=signal, basis=basis, date=datetime.now().strftime("%Y-%m-%d"))
+    _atomic_write(path, data)
+    _write_through_company_signals(data["company_signals"])
     return entry
+
+
+def record_no_sponsorship(company: str, count: int = 1, local_path: str | None = None) -> dict:
+    """Accumulates explicit no-sponsorship posting detections per company (roadmap item 5) -- separate
+    from the LCA-tier company_signal: a company flips to auto-reject once enough of ITS OWN postings
+    said no, independent of this one posting's language or the company's filing volume. Lives in the
+    same shared, durable store as save_company_signal() (see COMPANY_SIGNALS_REPO_PATH)."""
+    path = local_path or RULES_LOCAL_PATH
+    data = _read_local(path)
+    entry = data.setdefault("company_signals", {}).setdefault(company.lower(), {})
+    entry["no_sponsorship_count"] = entry.get("no_sponsorship_count", 0) + count
+    entry["auto_reject"] = entry["no_sponsorship_count"] >= AUTO_REJECT_THRESHOLD
+    entry.setdefault("date", datetime.now().strftime("%Y-%m-%d"))
+    _atomic_write(path, data)
+    _write_through_company_signals(data["company_signals"])
+    return entry
+
+
+def company_auto_reject(company: str, rules: dict) -> bool:
+    """True if accumulated posting-level no-sponsorship detections (record_no_sponsorship) crossed
+    AUTO_REJECT_THRESHOLD for this company. Read from rules["researched"], populated by load_rules()."""
+    info = rules.get("researched", {}).get((company or "").lower())
+    return bool(info and info.get("auto_reject"))
+
+
+def sync_company_signals_from_repo(local_path: str | None = None) -> int:
+    """Pulls the shared company-signals store from the private data repo into the local rules.local.json
+    cache, mirroring store.sync_users_from_repo(). Call once at backend startup so a freshly redeployed
+    Render instance (local disk wiped) doesn't start company research/auto-reject cold -- "suggest from
+    what we already know" instead of researching every company fresh again. No-op (returns 0) if
+    data_repo isn't configured, or the shared file doesn't exist yet."""
+    if not data_repo.enabled():
+        return 0
+    remote = data_repo.read_json(COMPANY_SIGNALS_REPO_PATH)
+    if not remote:
+        return 0
+    path = local_path or RULES_LOCAL_PATH
+    data = _read_local(path)
+    data.setdefault("company_signals", {}).update(remote)  # repo is the shared source of truth
+    _atomic_write(path, data)
+    return len(remote)
 
 
 def _norm(s: str) -> str:
@@ -312,7 +382,9 @@ def apply_gate(job: dict, rules: dict, hours: int, track: str = "ft") -> dict:
         if any(p in text.lower() for p in rules["contract_track"]["exclude_patterns"]):
             reason = "c2c_visa_block"
     else:
-        if job["posting_visa"] == "No" or (job["posting_visa"] == "Transfer" and rules["visa"].get("mode") != "h1b_transfer"):
+        if company_auto_reject(job.get("company", ""), rules):
+            reason = "company_auto_reject"  # accumulated no-sponsorship history at this company (item 5)
+        elif job["posting_visa"] == "No" or (job["posting_visa"] == "Transfer" and rules["visa"].get("mode") != "h1b_transfer"):
             reason = "posting_no_sponsorship"  # "Transfer" only helps profiles that already hold an H-1B
         elif job["posting_visa"] != "Yes" and is_staffing(job.get("company", ""), rules):
             reason = "staffing_c2c_only"  # staffing firms need role-specific sponsorship on the posting for FT
@@ -322,3 +394,26 @@ def apply_gate(job: dict, rules: dict, hours: int, track: str = "ft") -> dict:
             reason = "company_unverified"  # needs research -> agent tool check_h1b
     job["gate"] = reason or "pass"
     return job
+
+
+# ── Sponsorship-question answer bank (roadmap item 4) ────────────────────────
+# A consistent, pre-written answer to the near-universal ATS screening question ("Will you now or in
+# the future require sponsorship to work in the US?"), keyed to the user's visa mode -- not improvised
+# per application. Free, no LLM. A profile can override the wording via visa.sponsorship_answer.
+SPONSORSHIP_ANSWERS = {
+    "new_sponsorship": "Yes, I will require employer sponsorship for a work visa (H-1B) now or in the future.",
+    "h1b_transfer": "I currently hold a valid H-1B visa. I would not need a new H-1B filed -- my employer "
+                    "would need to file an H-1B transfer (change of employer) petition.",
+}
+
+
+def sponsorship_answer(rules: dict) -> str | None:
+    """None when the user doesn't need sponsorship at all (visa.enabled=false); otherwise the canned
+    answer for their visa.mode, or their own override text if they set visa.sponsorship_answer."""
+    v = rules.get("visa", {})
+    if not v.get("enabled", True):
+        return None
+    override = (v.get("sponsorship_answer") or "").strip()
+    if override:
+        return override
+    return SPONSORSHIP_ANSWERS.get(v.get("mode", "new_sponsorship"), SPONSORSHIP_ANSWERS["new_sponsorship"])
