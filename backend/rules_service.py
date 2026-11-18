@@ -27,10 +27,23 @@ def _read_local(path: str) -> dict:
         return {}
 
 
-def load_rules(path: str = RULES_PATH, local_path: str | None = None) -> dict:
+def load_rules(path: str = RULES_PATH, local_path: str | None = None, user_id: str | None = None) -> dict:
     """Profile rules + per-user rules.local.json (persisted H1B research). Research never overrides
-    a company the user already tiered by hand (manual lists win)."""
-    if os.getenv("RULES_JSON") and path == RULES_PATH:
+    a company the user already tiered by hand (manual lists win).
+
+    Multi-user: when `user_id` is given, an authenticated user's own saved profile (store.profiles,
+    set via store.save_profile() -- no HTTP route yet, see CLAUDE.md Roadmap) is used as the base
+    instead of the file-based one. A user with no saved
+    profile yet falls back to the same file-based resolution as before (env RULES_JSON -> env
+    RULES_PATH -> rules.json -> rules.example.json), so every new tester starts from the example
+    profile with no setup required. See CLAUDE.md "Multi-user" section."""
+    saved = None
+    if user_id:
+        import store  # local import: avoids a hard circular import at module load time
+        saved = store.get_profile(user_id)
+    if saved is not None:
+        rules = saved
+    elif os.getenv("RULES_JSON") and path == RULES_PATH:
         rules = json.loads(os.environ["RULES_JSON"])
     else:
         with open(path) as f:

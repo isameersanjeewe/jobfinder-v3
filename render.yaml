@@ -13,3 +13,9 @@ services:
         sync: false
       - key: RULES_JSON       # your profile (contents of backend/rules.json); never commit it
         sync: false
+      - key: SESSION_SECRET   # set in the Render dashboard; signs per-user session tokens (see docs/MULTI_USER_SETUP.md)
+        sync: false
+      - key: DATA_REPO_TOKEN  # optional: fine-grained PAT for the private jobfinder-data repo (contents:write + actions:write on it only); unset = runs fully in-process as before
+        sync: false
+      - key: DATA_REPO        # optional: "your-github-username/jobfinder-data"; leave unset until DATA_REPO_TOKEN is set up
+        sync: false

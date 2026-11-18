@@ -389,55 +389,104 @@ hdr = to_csv(r["leads"]).splitlines()[0]
 assert "company_h1b" in hdr and "score" in hdr and "hot_lead" in hdr and "fit" in hdr
 open("/tmp/l.xlsx","wb").write(to_xlsx(r["leads"]))
 from fastapi.testclient import TestClient
-import main
+import main, store, auth as auth_mod
 c = TestClient(main.app)
-print("/agent/run", c.post("/agent/run", json={"resume_text":resume,"user_id":"api"}).status_code)
-assert c.post("/agent/run", json={"resume_text":resume,"user_id":"api7","hours":168}).status_code == 200
-print("/leads json", c.get("/leads").json()["count"])
-print("/leads csv", c.get("/leads?format=csv").headers["content-type"])
-print("/leads xlsx", c.get("/leads?format=xlsx").status_code)
-print("/export/sheets (no creds)", c.post("/export/sheets", json={"sheet_id":"abc"}).json())
+
+# ── per-user passcode auth (POST /auth/login issues the session token every user-scoped endpoint now
+# requires; user_id is derived from that token, never from a client-supplied field -- see main.py) ──
+store.create_user("api", "correct-passcode")
+store.create_user("api7", "another-passcode-2")
+store.create_user("bg", "bg-passcode-1")
+store.create_user("flt", "flt-passcode-1")
+assert c.post("/auth/login", json={"user_id": "api", "passcode": "wrong"}).status_code == 401       # wrong passcode
+assert c.post("/auth/login", json={"user_id": "nobody", "passcode": "whatever1"}).status_code == 401  # unknown user
+lr = c.post("/auth/login", json={"user_id": "api", "passcode": "correct-passcode"})
+assert lr.status_code == 200 and lr.json()["user_id"] == "api" and lr.json()["token"]
+TOK_API = lr.json()["token"]
+AUTH = {"X-Session-Token": TOK_API}
+TOK_API7 = c.post("/auth/login", json={"user_id": "api7", "passcode": "another-passcode-2"}).json()["token"]
+AUTH7 = {"X-Session-Token": TOK_API7}
+TOK_BG = c.post("/auth/login", json={"user_id": "bg", "passcode": "bg-passcode-1"}).json()["token"]
+AUTH_BG = {"X-Session-Token": TOK_BG}
+TOK_FLT = c.post("/auth/login", json={"user_id": "flt", "passcode": "flt-passcode-1"}).json()["token"]
+AUTH_FLT = {"X-Session-Token": TOK_FLT}
+assert auth_mod.verify_session_token(TOK_API) == "api"
+assert auth_mod.verify_session_token("garbage.notasig") is None          # tampered/malformed token rejected
+assert auth_mod.verify_session_token(TOK_API + "x") is None              # altered signature rejected
+assert c.get("/leads").status_code == 401                                # no session token at all
+assert c.get("/leads", headers={"X-Session-Token": "garbage.notasig"}).status_code == 401  # bad session token
+print("AUTH: correct/incorrect passcode, session token issue/verify/tamper OK")
+
+print("/agent/run", c.post("/agent/run", json={"resume_text":resume}, headers=AUTH).status_code)
+assert c.post("/agent/run", json={"resume_text":resume,"hours":168}, headers=AUTH7).status_code == 200
+print("/leads json", c.get("/leads", headers=AUTH).json()["count"])
+print("/leads csv", c.get("/leads?format=csv", headers=AUTH).headers["content-type"])
+print("/leads xlsx", c.get("/leads?format=xlsx", headers=AUTH).status_code)
+print("/export/sheets (no creds)", c.post("/export/sheets", json={"sheet_id":"abc"}, headers=AUTH).json())
 print("/search", c.post("/search", json={"sources":["remotive"]}).status_code)
+
+# ── per-user leads isolation: two different users never see each other's saved leads ──
+store.save_leads([{"url": "https://x/only-api-sees-this", "title": "Only Api", "company": "Acme"}], "ft", "api")
+store.save_leads([{"url": "https://x/only-api7-sees-this", "title": "Only Api7", "company": "Acme"}], "ft", "api7")
+leads_api  = {l["url"] for l in c.get("/leads", headers=AUTH).json()["leads"]}
+leads_api7 = {l["url"] for l in c.get("/leads", headers=AUTH7).json()["leads"]}
+assert "https://x/only-api-sees-this" in leads_api and "https://x/only-api7-sees-this" not in leads_api
+assert "https://x/only-api7-sees-this" in leads_api7 and "https://x/only-api-sees-this" not in leads_api7
+print("ISOLATION: /leads scoped to the session's own user_id, not a client-supplied one OK")
+
+# ── per-user profile isolation: a saved profile is used for that user only; others keep file defaults ──
+custom = json.loads(json.dumps(EX))
+custom["profile"]["titles"] = ["Data Engineer"]
+store.save_profile("api", custom)
+assert rules_service.load_rules(user_id="api")["profile"]["titles"] == ["Data Engineer"]
+assert rules_service.load_rules(user_id="api7")["profile"]["titles"] != ["Data Engineer"]   # no profile row -> file default
+assert rules_service.load_rules()["profile"]["titles"] != ["Data Engineer"]                 # no user_id -> unaffected
+pf_api  = c.get("/profile/filters", headers=AUTH).json()
+pf_api7 = c.get("/profile/filters", headers=AUTH7).json()
+assert pf_api["titles"] == ["Data Engineer"] and pf_api7["titles"] != ["Data Engineer"]
+print("PROFILE: per-user saved profile isolated from other users and from the file default OK")
 
 # ── security controls ──
 # input validation
-assert c.post("/agent/run", json={"hours": 99999}).status_code == 422
-assert c.post("/agent/run", json={"user_id": "../../etc"}).status_code == 422
+assert c.post("/agent/run", json={"hours": 99999}, headers=AUTH).status_code == 422
 assert c.post("/search", json={"sources": ["evil"]}).status_code == 422
 assert c.post("/feedback", json={"url": "u", "signal": "<script>"}).status_code == 422
-assert c.get("/leads?format=exe").status_code == 400
-assert c.post("/export/sheets", json={"sheet_id": "abc/../x"}).status_code == 422
+assert c.get("/leads?format=exe", headers=AUTH).status_code == 400
+assert c.post("/export/sheets", json={"sheet_id": "abc/../x"}, headers=AUTH).status_code == 422
 # resume upload: size cap, PDF signature
 assert c.post("/parse-resume", files={"file": ("r.pdf", b"x" * (5 * 1024 * 1024 + 10), "application/pdf")}).status_code == 413
 assert c.post("/parse-resume", files={"file": ("r.pdf", b"<html>not a pdf</html>", "application/pdf")}).status_code == 400
 # no exception text leaks to clients
 _run = agent_service.AgentRun.run
 agent_service.AgentRun.run = lambda self, goal="": (_ for _ in ()).throw(RuntimeError("secret-internal-detail"))
-er = c.post("/agent/run", json={"user_id": "boom"})
+er = c.post("/agent/run", json={}, headers=AUTH)
 assert er.status_code == 500 and "secret-internal-detail" not in er.text, er.text
 agent_service.AgentRun.run = _run
 assert not main._agent_lock.locked(), "lock must be released after a failed run"
 agent_service.fetch_ats = lambda boards, companies=None, queries=None: [dict(j) for j in FIX[:4]]
 # one agent run at a time
 main._agent_lock.acquire()
-assert c.post("/agent/run", json={}).status_code == 429 and c.post("/agent/start", json={}).status_code == 429
+assert c.post("/agent/run", json={}, headers=AUTH).status_code == 429 and c.post("/agent/start", json={}, headers=AUTH).status_code == 429
 main._agent_lock.release()
 # background job: start + poll
-jid = c.post("/agent/start", json={"user_id": "bg", "hours": 168}).json()["job_id"]
+jid = c.post("/agent/start", json={"hours": 168}, headers=AUTH_BG).json()["job_id"]
 for _ in range(100):
-    st = c.get(f"/agent/jobs/{jid}").json()
+    st = c.get(f"/agent/jobs/{jid}", headers=AUTH_BG).json()
     if st["status"] != "running": break
     _t.sleep(0.05)
 assert st["status"] == "done" and len(st["result"]["leads"]) == 2, st
 assert all("description" not in l for l in st["result"]["leads"])
-assert c.get("/agent/jobs/nope").status_code == 404
-# auth: with API_TOKEN set, everything except / and /health needs the bearer token
+assert c.get(f"/agent/jobs/{jid}").status_code == 401                 # no session token at all
+assert c.get(f"/agent/jobs/{jid}", headers=AUTH).status_code == 404   # a different user can't poll bg's job
+assert c.get("/agent/jobs/nope", headers=AUTH_BG).status_code == 404
+# auth: with API_TOKEN set, everything except / and /health needs the bearer token (on top of the
+# per-user session token above -- the two layers are independent, see CLAUDE.md "Multi-user" section)
 main.API_TOKEN = "s3cret-token"
 assert c.get("/health").status_code == 200 and c.get("/").json()["auth"] is True
-assert c.get("/leads").status_code == 401
-assert c.get("/leads", headers={"Authorization": "Bearer wrong"}).status_code == 401
+assert c.get("/leads", headers=AUTH).status_code == 401                                   # bearer missing
+assert c.get("/leads", headers={**AUTH, "Authorization": "Bearer wrong"}).status_code == 401
 assert c.post("/export/sheets", json={}).status_code == 401
-assert c.get("/leads", headers={"Authorization": "Bearer s3cret-token"}).status_code == 200
+assert c.get("/leads", headers={**AUTH, "Authorization": "Bearer s3cret-token"}).status_code == 200
 assert c.options("/leads", headers={"Origin": "http://localhost", "Access-Control-Request-Method": "GET"}).status_code == 200
 main.API_TOKEN = ""
 assert c.get("/health").headers["x-content-type-options"] == "nosniff"
@@ -481,15 +530,80 @@ assert {j["title"] for j in free_sources.fetch_company_board("acme", "workday", 
 free_sources.requests.request = _rq
 # profile defaults never mutate between runs (each run gets a fresh copy)
 assert rules_service.load_rules()["visa"]["mode"] == "new_sponsorship"
-# API: defaults for the UI, filters on a run, validation
-pf = c.get("/profile/filters").json()
+# API: defaults for the UI, filters on a run, validation (flt has no saved profile -> file default)
+pf = c.get("/profile/filters", headers=AUTH_FLT).json()
 assert pf["visa"] == "new_sponsorship" and pf["titles"] and pf["locations"] == ["Austin, TX"], pf
-assert c.post("/agent/run", json={"user_id": "flt", "filters": {"visa": "none", "titles": ["Product Manager"]}}).status_code == 200
-assert c.post("/agent/run", json={"filters": {"visa": "green card"}}).status_code == 422
-assert c.post("/agent/run", json={"filters": {"titles": ["x" * 81]}}).status_code == 422
-assert c.post("/agent/run", json={"filters": {"locations": ["a"] * 9}}).status_code == 422
+assert c.post("/agent/run", json={"filters": {"visa": "none", "titles": ["Product Manager"]}}, headers=AUTH_FLT).status_code == 200
+assert c.post("/agent/run", json={"filters": {"visa": "green card"}}, headers=AUTH_FLT).status_code == 422
+assert c.post("/agent/run", json={"filters": {"titles": ["x" * 81]}}, headers=AUTH_FLT).status_code == 422
+assert c.post("/agent/run", json={"filters": {"locations": ["a"] * 9}}, headers=AUTH_FLT).status_code == 422
 main.API_TOKEN = "s3cret-token"
-assert c.get("/profile/filters").status_code == 401
+assert c.get("/profile/filters", headers=AUTH_FLT).status_code == 401
 main.API_TOKEN = ""
 print("FILTERS: titles, locations, visa none/new/transfer, sponsors-only, industries, exclusions, API OK")
+
+# ── data_repo: optional private-repo persistence/trigger client (see CLAUDE.md "Multi-user") ──
+# Unconfigured by default -- local dev and this whole test suite need no GitHub credentials.
+import data_repo, base64, requests as _requests
+assert data_repo.enabled() is False
+assert data_repo.fetch_user_leads("anyone") == []
+assert data_repo.trigger_run("anyone", {})["ok"] is False
+assert data_repo.find_run_after(_t.time(), timeout_s=0) is None
+assert data_repo.run_status(1) is None
+
+data_repo.DATA_REPO_TOKEN, data_repo.DATA_REPO = "tok", "owner/jobfinder-data"
+assert data_repo.enabled() is True
+
+class _FakeResp:
+    def __init__(self, status_code=200, json_data=None, text=""):
+        self.status_code, self._json, self.text = status_code, json_data or {}, text
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"http {self.status_code}")
+    def json(self):
+        return self._json
+
+_dispatch_calls = []
+def _fake_get(url, headers=None, params=None, timeout=None):
+    if "/contents/data/" in url and url.endswith("/leads.json"):
+        content = base64.b64encode(json.dumps([{"url": "https://x/1"}]).encode()).decode()
+        return _FakeResp(200, {"content": content})
+    if "/contents/data/" in url and url.endswith("/missing.json"):
+        return _FakeResp(404)
+    if url.endswith("/runs"):
+        now_z = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        return _FakeResp(200, {"workflow_runs": [{"id": 42, "created_at": now_z}]})
+    if "/actions/runs/42" in url:
+        return _FakeResp(200, {"status": "completed", "conclusion": "success"})
+    return _FakeResp(404)
+def _fake_post(url, headers=None, json=None, timeout=None):
+    _dispatch_calls.append((url, json))
+    return _FakeResp(204)
+
+_real_get, _real_post = _requests.get, _requests.post
+_requests.get, _requests.post = _fake_get, _fake_post
+try:
+    assert data_repo.fetch_user_json("u1", "leads.json") == [{"url": "https://x/1"}]
+    assert data_repo.fetch_user_json("u1", "missing.json") is None
+    d = data_repo.trigger_run("u1", {"profile": {}}, "resume", 40, 24)
+    assert d["ok"] is True and _dispatch_calls[-1][1]["inputs"]["user_id"] == "u1"
+    run = data_repo.find_run_after(_t.time() - 2, timeout_s=3)
+    assert run and run["id"] == 42
+    assert data_repo.run_status(42) == {"status": "completed", "conclusion": "success"}
+
+    # /agent/start + /agent/jobs poll the remote path end-to-end when data_repo is "enabled"
+    jid2 = c.post("/agent/start", json={}, headers=AUTH).json()["job_id"]
+    assert jid2.startswith("remote:")
+    for _ in range(20):
+        st2 = c.get(f"/agent/jobs/{jid2}", headers=AUTH).json()
+        if st2["status"] != "running":
+            break
+        _t.sleep(0.1)
+    assert st2["status"] == "done" and st2["result"]["leads"] == [{"url": "https://x/1"}], st2
+finally:
+    _requests.get, _requests.post = _real_get, _real_post
+    data_repo.DATA_REPO_TOKEN, data_repo.DATA_REPO = "", ""
+assert data_repo.enabled() is False
+print("DATA_REPO: contents fetch, dispatch, run lookup/status, /agent/start remote path mocked OK (no real GitHub calls)")
+
 print("ALL OK")

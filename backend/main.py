@@ -7,7 +7,7 @@
 #   POST /feedback     → thumbs up/down per job, adjusts future scoring
 #   GET  /usage        → daily API call counter per source
 
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, Request, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
@@ -28,6 +28,8 @@ from free_sources     import fetch_jobspy, fetch_ats
 from rules_service    import load_rules, apply_gate, apply_filters, profile_filters
 from agent_service    import AgentRun
 from fastapi          import Response
+import auth
+import data_repo
 import store
 
 log = logging.getLogger("jobfinder")
@@ -62,6 +64,18 @@ async def auth_and_headers(request: Request, call_next):
     resp.headers["Referrer-Policy"] = "no-referrer"
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+# ── PER-USER AUTH (second layer, on top of API_TOKEN above) ───────────────────
+# API_TOKEN gates the whole API from the public internet. This layer identifies WHICH authenticated
+# user is calling, via a signed session token from POST /auth/login (see auth.py). Every endpoint that
+# used to accept a client-supplied `user_id` field now takes it from this instead -- see CLAUDE.md
+# "Multi-user" section: trusting a client-supplied user_id let anyone read/write any other user's data.
+def current_user(x_session_token: str = Header(default="", alias="X-Session-Token")) -> str:
+    user_id = auth.verify_session_token(x_session_token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="missing or invalid session token; call /auth/login first")
+    return user_id
 
 
 MAX_RESUME_BYTES = 5 * 1024 * 1024
@@ -107,6 +121,11 @@ def UserId():
     return Field(default="default", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.@-]+$")
 
 
+class LoginParams(BaseModel):
+    user_id:  str = UserId()
+    passcode: str = Field(min_length=4, max_length=128)
+
+
 class SearchParams(BaseModel):
     keywords:    list[str] = Field(default=["product manager", "product owner"], max_length=10)
     exclude:     list[str] = Field(default=["intern", "junior", "hardware", "mechanical"], max_length=30)
@@ -132,10 +151,12 @@ class AgentFilters(BaseModel):
 
 
 class AgentParams(BaseModel):
+    # No user_id field: who this run is for comes from the verified session token (see current_user()
+    # below), never from the client. A client-supplied user_id here would let anyone read/write any
+    # other user's leads/profile just by naming their id.
     filters:      AgentFilters | None = None
     goal:         str  = Field(default="", max_length=500)
     resume_text:  str  = Field(default="", max_length=20000)
-    user_id:      str  = UserId()
     min_fit:      int  = Field(default=40, ge=0, le=100)
     resume_years: int | None = Field(default=None, ge=0, le=60)
     hours:        int | None = Field(default=None, ge=1, le=720)   # overrides recency_hours (24 daily, 168 weekly)
@@ -143,7 +164,7 @@ class AgentParams(BaseModel):
 class SheetExport(BaseModel):
     sheet_id: str = Field(default="", max_length=100, pattern=r"^[A-Za-z0-9_-]*$")  # falls back to env SHEET_ID
     tab:      str = Field(default="Leads", min_length=1, max_length=100)
-    user_id:  str = UserId()
+    # No user_id field -- see AgentParams comment above; same reasoning.
     since:    str = Field(default="", max_length=20)
     track:    Literal["", "ft", "c2c"] = ""   # "c2c" for the "C2C Leads" tab, "ft" for FT tabs
     hot_only: bool = True                     # only Hot Leads (score >= 65) go to the Sheet
@@ -242,6 +263,16 @@ def root():
     return {"service": "JobFinder", "version": "4.0", "status": "running", "auth": bool(API_TOKEN)}
 
 
+@app.post("/auth/login")
+def login(p: LoginParams):
+    """Verifies a passcode the owner created with backend/add_user.py and issues a signed session
+    token (header X-Session-Token on every later request). No self-serve signup endpoint exists."""
+    if not store.verify_user(p.user_id, p.passcode):
+        return JSONResponse({"error": "invalid user_id or passcode"}, status_code=401)
+    token = auth.make_session_token(p.user_id)
+    return {"token": token, "user_id": p.user_id, "expires_days": auth.SESSION_DAYS}
+
+
 @app.post("/search")
 def search(params: SearchParams):
     try:
@@ -278,11 +309,11 @@ def export(params: SearchParams):
         return JSONResponse({"error": "export failed (see server log)"}, status_code=500)
 
 
-def _run_agent(params: AgentParams) -> dict:
-    rules = apply_filters(load_rules(), params.filters.model_dump() if params.filters else None)
+def _run_agent(params: AgentParams, user_id: str) -> dict:
+    rules = apply_filters(load_rules(user_id=user_id), params.filters.model_dump() if params.filters else None)
     if params.hours:
         rules["profile"]["recency_hours"] = params.hours
-    run = AgentRun(params.resume_text, params.user_id, rules=rules, min_fit=params.min_fit, resume_years=params.resume_years)
+    run = AgentRun(params.resume_text, user_id, rules=rules, min_fit=params.min_fit, resume_years=params.resume_years)
     res = run.run(params.goal)
     for l in res["leads"]:  # the UI doesn't need full JDs; keep responses small
         l.pop("description", None)
@@ -290,12 +321,12 @@ def _run_agent(params: AgentParams) -> dict:
 
 
 @app.post("/agent/run")
-def agent_run(params: AgentParams):
+def agent_run(params: AgentParams, user_id: str = Depends(current_user)):
     """Synchronous agent run (CLI/tests). The UI uses /agent/start + /agent/jobs/{id} instead."""
     if not _agent_lock.acquire(blocking=False):
         return JSONResponse({"error": "an agent run is already in progress", "leads": []}, status_code=429)
     try:
-        return JSONResponse(_run_agent(params))
+        return JSONResponse(_run_agent(params, user_id))
     except Exception:
         log.exception("agent run failed")
         return JSONResponse({"error": "agent run failed (see server log)", "leads": []}, status_code=500)
@@ -304,19 +335,37 @@ def agent_run(params: AgentParams):
 
 
 @app.post("/agent/start")
-def agent_start(params: AgentParams):
-    """Start an agent run in the background (runs take minutes; free hosts drop long HTTP requests)."""
+def agent_start(params: AgentParams, user_id: str = Depends(current_user)):
+    """Start an agent run in the background (runs take minutes; free hosts drop long HTTP requests).
+    When DATA_REPO_TOKEN/DATA_REPO are configured (see data_repo.py / docs/MULTI_USER_SETUP.md), the
+    actual scrape is dispatched to the private data repo's GitHub Actions workflow instead of running
+    here in-process -- Render then only triggers + polls it. Unconfigured (the default), this runs
+    exactly as it always has."""
+    if data_repo.enabled():
+        rules = apply_filters(load_rules(user_id=user_id), params.filters.model_dump() if params.filters else None)
+        if params.hours:
+            rules["profile"]["recency_hours"] = params.hours
+        dispatch = data_repo.trigger_run(user_id, rules, params.resume_text, params.min_fit, params.hours)
+        if not dispatch["ok"]:
+            return JSONResponse({"error": dispatch["error"]}, status_code=502)
+        job_id = f"remote:{uuid.uuid4().hex}"
+        for k in sorted(_jobs, key=lambda k: _jobs[k]["started"])[:-20]:
+            _jobs.pop(k, None)
+        _jobs[job_id] = {"status": "running", "started": time.time(), "result": None, "user_id": user_id,
+                          "remote": {"user_id": user_id, "dispatched_at": dispatch["dispatched_at"], "run_id": None}}
+        return {"job_id": job_id, "status": "running"}
+
     if not _agent_lock.acquire(blocking=False):
         running = next((k for k, v in _jobs.items() if v["status"] == "running"), None)
         return JSONResponse({"error": "an agent run is already in progress", "job_id": running}, status_code=429)
     job_id = uuid.uuid4().hex
     for k in sorted(_jobs, key=lambda k: _jobs[k]["started"])[:-20]:  # keep the last 20 results only
         _jobs.pop(k, None)
-    _jobs[job_id] = {"status": "running", "started": time.time(), "result": None}
+    _jobs[job_id] = {"status": "running", "started": time.time(), "result": None, "user_id": user_id}
 
     def work():
         try:
-            _jobs[job_id].update(status="done", result=_run_agent(params))
+            _jobs[job_id].update(status="done", result=_run_agent(params, user_id))
         except Exception:
             log.exception("agent job failed")
             _jobs[job_id].update(status="error", result={"error": "agent run failed (see server log)", "leads": []})
@@ -328,25 +377,45 @@ def agent_start(params: AgentParams):
 
 
 @app.get("/profile/filters")
-def get_profile_filters():
-    """Defaults for the UI's Search filters panel (the server profile). Requires the token like any endpoint."""
-    return profile_filters(load_rules())
+def get_profile_filters(user_id: str = Depends(current_user)):
+    """Defaults for the UI's Search filters panel (this user's saved profile, or the example profile
+    if they have none yet). Requires the token like any endpoint, plus a valid session."""
+    return profile_filters(load_rules(user_id=user_id))
 
 
 @app.get("/agent/jobs/{job_id}")
-def agent_job(job_id: str):
+def agent_job(job_id: str, user_id: str = Depends(current_user)):
     j = _jobs.get(job_id)
-    if not j:
+    if not j or j.get("user_id") != user_id:  # don't let one user poll/read another's job by id
         return JSONResponse({"error": "unknown job"}, status_code=404)
+    if job_id.startswith("remote:") and j["status"] == "running":
+        remote = j["remote"]
+        if remote["run_id"] is None:
+            run = data_repo.find_run_after(remote["dispatched_at"], timeout_s=5)
+            if run:
+                remote["run_id"] = run["id"]
+        if remote["run_id"] is not None:
+            st = data_repo.run_status(remote["run_id"])
+            if st and st["status"] == "completed":
+                if st["conclusion"] == "success":
+                    leads = data_repo.fetch_user_leads(remote["user_id"])
+                    j.update(status="done", result={"leads": leads, "new_count": None,
+                                                      "summary": f"remote run: {len(leads)} total leads"})
+                else:
+                    j.update(status="error",
+                              result={"error": f"remote run {st['conclusion'] or 'failed'} (see the private "
+                                                "repo's Actions tab for logs)", "leads": []})
     return {"job_id": job_id, "status": j["status"], "elapsed_s": int(time.time() - j["started"]), "result": j["result"]}
 
 
 @app.get("/leads")
-def leads(user_id: str = "default", since: str = "", track: str = "", format: str = "json"):
-    """All saved leads. format=json | csv | xlsx (xlsx/csv open directly in Google Sheets)."""
-    if format not in ("json", "csv", "xlsx") or track not in ("", "ft", "c2c") or len(user_id) > 64 or len(since) > 20:
+def leads(since: str = "", track: str = "", format: str = "json", user_id: str = Depends(current_user)):
+    """All saved leads for the calling user. format=json | csv | xlsx (xlsx/csv open directly in Google Sheets).
+    Prefers the private data repo's copy when DATA_REPO_TOKEN/DATA_REPO are configured (that's the durable
+    source of truth once set up); falls back to local SQLite otherwise -- see data_repo.py."""
+    if format not in ("json", "csv", "xlsx") or track not in ("", "ft", "c2c") or len(since) > 20:
         return JSONResponse({"error": "bad parameters"}, status_code=400)
-    rows = store.list_leads(user_id, since, track)
+    rows = data_repo.fetch_user_leads(user_id) if data_repo.enabled() else store.list_leads(user_id, since, track)
     for r in rows:
         r.pop("description", None)
     if format == "csv":
@@ -359,10 +428,10 @@ def leads(user_id: str = "default", since: str = "", track: str = "", format: st
 
 
 @app.post("/export/sheets")
-def export_sheets(p: SheetExport):
+def export_sheets(p: SheetExport, user_id: str = Depends(current_user)):
     """Append leads to the user's Google Sheet (append-only, dedupes by URL)."""
     try:
-        rows = p.jobs or store.list_leads(p.user_id, p.since, p.track)
+        rows = p.jobs or (data_repo.fetch_user_leads(user_id) if data_repo.enabled() else store.list_leads(user_id, p.since, p.track))
         if p.hot_only:  # docs/CONTEXT.md: only Hot Leads go to the Sheet; the rest stay in the run log
             rows = [r for r in rows if r.get("hot_lead")]
         sheet_id = p.sheet_id or os.getenv("SHEET_ID", "")

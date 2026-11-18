@@ -1,0 +1,71 @@
+# Runs a per-user job search and commits the result into THIS (private) repo as JSON, so it survives
+# Render redeploys. Triggered by Render (POST /agent/start -> data_repo.trigger_run() in the app repo's
+# backend/data_repo.py) via the GitHub API's workflow_dispatch, or manually from this repo's Actions tab.
+#
+# Setup: copy this whole data-repo-template/ folder's contents into a NEW, PRIVATE GitHub repo (see
+# docs/MULTI_USER_SETUP.md in the app repo for the exact steps). No secrets needed here: this workflow
+# commits back to its OWN repo using the automatically-provided GITHUB_TOKEN (permissions: contents:
+# write, below) -- nothing new to configure in this repo itself.
+name: run-agent-for-user
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: "Which tester this run is for (matches backend/add_user.py)"
+        required: true
+      rules_json:
+        description: "Full resolved profile (JSON), already merged with any in-app filter overlay by Render"
+        required: true
+      resume_text:
+        description: "Optional resume text for fit scoring"
+        required: false
+        default: ""
+      min_fit:
+        description: "Minimum fit score to keep a lead"
+        required: false
+        default: "40"
+      hours:
+        description: "Optional recency-window override in hours (blank = use the profile's own setting)"
+        required: false
+        default: ""
+permissions:
+  contents: write   # needed to commit data/<user_id>/leads.json + seen.json back into this repo
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out this data repo
+        uses: actions/checkout@v4
+        with:
+          path: data-repo
+      - name: Check out the public app repo (read-only, for the scraper code)
+        uses: actions/checkout@v4
+        with:
+          repository: isameersanjeewe/jobfinder-v3
+          ref: main
+          path: app-src
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r app-src/backend/requirements.txt
+      - name: Run the agent for this user
+        working-directory: data-repo
+        env:
+          USER_ID: ${{ inputs.user_id }}
+          RULES_JSON: ${{ inputs.rules_json }}
+          RESUME_TEXT: ${{ inputs.resume_text }}
+          MIN_FIT: ${{ inputs.min_fit }}
+          HOURS: ${{ inputs.hours }}
+          APP_BACKEND_DIR: ${{ github.workspace }}/app-src/backend
+        run: python scripts/run_for_user.py
+      - name: Commit updated leads/seen JSON back into this repo
+        working-directory: data-repo
+        env:
+          GH_USER_ID: ${{ inputs.user_id }}
+        run: |
+          git config user.name "jobfinder-data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add "data/${GH_USER_ID}/leads.json" "data/${GH_USER_ID}/seen.json"
+          git diff --cached --quiet && echo "no changes" || git commit -m "Update leads for ${GH_USER_ID} ($(date -u +%Y-%m-%dT%H:%MZ))"
+          git push
