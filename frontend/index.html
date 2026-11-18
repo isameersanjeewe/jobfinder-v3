@@ -176,6 +176,22 @@ main { padding:20px 24px; min-width:0; }
     <input type="password" id="login-passcode" autocomplete="current-password">
     <p class="hint" id="login-error" style="color:var(--red); margin-top:8px; min-height:14px"></p>
     <button class="btn" id="login-submit" type="button" style="margin-top:6px">Sign in</button>
+
+    <button class="btn-sm" id="bootstrap-toggle" type="button" style="margin-top:14px;width:100%">⚙ Owner setup / add first tester</button>
+    <div id="bootstrap-panel" hidden style="margin-top:10px;text-align:left">
+      <label for="bootstrap-api-token">API token (API_TOKEN)</label>
+      <input type="password" id="bootstrap-api-token" autocomplete="off">
+      <p class="hint" style="margin-top:4px;margin-bottom:10px">Needed once, before any account exists. Same value as Connection settings uses later -- stored in this browser only.</p>
+      <label for="bootstrap-user-id">New user ID</label>
+      <input type="text" id="bootstrap-user-id" autocomplete="off">
+      <label for="bootstrap-passcode">New passcode</label>
+      <div class="row" style="gap:6px">
+        <input type="text" id="bootstrap-passcode" placeholder="4+ characters" autocomplete="off" style="flex:1">
+        <button class="btn-sm" id="bootstrap-gen-passcode" type="button" title="Generate a random passcode">🎲</button>
+      </div>
+      <button class="btn-sm" id="bootstrap-add-user" type="button" style="margin-top:8px;width:100%">+ Add tester</button>
+      <p class="hint" id="bootstrap-result" style="margin-top:6px;min-height:14px"></p>
+    </div>
   </div>
 </div>
 
@@ -653,6 +669,45 @@ function sendFeedbackIssue() {
   closeFeedback();
 }
 
+// ── bootstrap: reachable from the login screen itself (unlike Connection settings, which lives inside
+// #app and is unreachable before any account exists -- a real chicken-and-egg otherwise: creating the
+// first account needs the Add Tester panel, which needs login, which needs an account). Shares the same
+// "api_token" localStorage key as Connection settings, so setting it here also fills it in there later. ──
+function toggleBootstrap() {
+  const p = $("bootstrap-panel");
+  p.hidden = !p.hidden;
+  if (!p.hidden) $("bootstrap-api-token").value = store.get("api_token");
+}
+function genBootstrapPasscode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  $("bootstrap-passcode").value = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, "").slice(0, 12);
+}
+async function bootstrapAddUser() {
+  const tok = $("bootstrap-api-token").value.trim();
+  const user_id = $("bootstrap-user-id").value.trim();
+  const passcode = $("bootstrap-passcode").value;
+  const out = $("bootstrap-result");
+  if (!tok) { out.style.color = "var(--red)"; out.textContent = "Enter the API token first."; return; }
+  if (!user_id || passcode.length < 4) { out.style.color = "var(--red)"; out.textContent = "Enter a user ID and a passcode of 4+ characters."; return; }
+  store.set("api_token", tok);  // save now so Connection settings picks it up too, even if the add-user call fails
+  const btn = $("bootstrap-add-user");
+  btn.disabled = true; btn.textContent = "Adding…";
+  try {
+    const res = await postJSON("/admin/add-user", { user_id, passcode });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || "failed to add tester");
+    out.style.color = "var(--green)";
+    out.textContent = `${j.created ? "Added" : "Reset passcode for"} "${j.user_id}". Sign in above with it.`;
+    $("login-user-id").value = user_id;
+    $("bootstrap-user-id").value = ""; $("bootstrap-passcode").value = "";
+  } catch (e) {
+    out.style.color = "var(--red)";
+    out.textContent = e.message || "failed to add tester";
+  } finally {
+    btn.disabled = false; btn.textContent = "+ Add tester";
+  }
+}
+
 // ── admin: add a tester (owner only -- gated server-side by the API_TOKEN bearer check, same as every
 // other endpoint; this just saves running the equivalent curl command by hand each time) ──
 function genPasscode() {
@@ -748,6 +803,9 @@ $("feedback-cancel").addEventListener("click", closeFeedback);
 $("feedback-send").addEventListener("click", sendFeedbackIssue);
 $("admin-gen-passcode").addEventListener("click", genPasscode);
 $("admin-add-user").addEventListener("click", addTester);
+$("bootstrap-toggle").addEventListener("click", toggleBootstrap);
+$("bootstrap-gen-passcode").addEventListener("click", genBootstrapPasscode);
+$("bootstrap-add-user").addEventListener("click", bootstrapAddUser);
 $("agent-btn").addEventListener("click", runAgent);
 $("search-btn").addEventListener("click", search);
 $("csv-btn").addEventListener("click", downloadCSV);
