@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src http://localhost:* http://127.0.0.1:* https:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>JobFinder Admin</title>
+<style>
+:root {
+  --bg:#f3f3ef; --ink:#171714; --muted:#726f68; --border:#e2e0d8; --surface:#ffffff; --soft:#faf9f5;
+  --green:#157f45; --green-bg:#dcf5e6; --red:#c0271a; --red-bg:#fde3e1;
+  --agent:#0f7a63; --agent-bg:#def4ec;
+  --display:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --radius:12px; --radius-sm:8px;
+  --shadow-md:0 6px 16px rgba(23,23,20,.07), 0 2px 4px rgba(23,23,20,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#131312; --ink:#eeede8; --muted:#9b998f; --border:#2d2c28; --surface:#1b1b19; --soft:#201f1c;
+    --green:#4fd58a; --green-bg:#133524; --red:#ff8a7a; --red-bg:#3a1a16; --agent:#3ddbb2; --agent-bg:#123630;
+    --shadow-md:0 10px 24px rgba(0,0,0,.4); }
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+[hidden] { display:none !important; }
+body { background:var(--bg); color:var(--ink); font-family:var(--display); font-size:14px; line-height:1.45; min-height:100vh; -webkit-font-smoothing:antialiased; }
+button, input { font:inherit; color:inherit; }
+.wrap { max-width:420px; margin:40px auto; padding:0 20px; }
+.wordmark { font-size:19px; font-weight:700; letter-spacing:-0.4px; margin-bottom:2px; }
+.wordmark em { color:var(--agent); font-style:normal; font-weight:700; }
+.sub { font-size:12px; color:var(--muted); margin-bottom:18px; }
+.card { border:1px solid var(--border); border-radius:var(--radius); padding:16px; background:var(--surface); box-shadow:var(--shadow-md); margin-bottom:16px; }
+.section-label { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; font-weight:600; }
+.hint { font-size:11.5px; color:var(--muted); line-height:1.6; }
+label { display:block; font-size:11px; color:var(--muted); margin:10px 0 4px; font-weight:500; }
+label:first-of-type { margin-top:0; }
+input[type="text"], input[type="password"] { width:100%; background:var(--soft); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 11px; font-size:12.5px; outline:none; }
+input:focus-visible, button:focus-visible { outline:2px solid var(--agent); outline-offset:1px; }
+.btn-sm { padding:7px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:11.5px; color:var(--muted); cursor:pointer; white-space:nowrap; font-weight:500; }
+.btn-sm:hover:not(:disabled) { border-color:var(--ink); color:var(--ink); background:var(--soft); }
+.btn-sm:disabled { opacity:.5; cursor:not-allowed; }
+.row { display:flex; gap:6px; align-items:center; }
+.user-row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-top:1px solid var(--border); font-size:12.5px; }
+.user-row:first-child { border-top:none; }
+#toasts { position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:20; max-width:min(380px, calc(100vw - 32px)); }
+.toast { background:var(--ink); color:var(--bg); padding:11px 15px; border-radius:var(--radius-sm); font-size:12.5px; line-height:1.5; box-shadow:var(--shadow-md); }
+.toast.err { background:var(--red); color:#fff; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="wordmark">Job<em>Finder</em> Admin</div>
+  <div class="sub">Not linked from the app &mdash; bookmark this page.</div>
+
+  <div class="card">
+    <div class="section-label">API token</div>
+    <label for="api-token">API_TOKEN</label>
+    <input type="password" id="api-token" autocomplete="off">
+    <p class="hint" style="margin-top:6px">Stored only in this browser. Same value as the Render service's API_TOKEN env var.</p>
+  </div>
+
+  <div class="card">
+    <div class="section-label">Add a tester</div>
+    <label for="new-user-id">User ID</label>
+    <input type="text" id="new-user-id" placeholder="e.g. a short handle or email" autocomplete="off">
+    <label for="new-passcode">Passcode</label>
+    <div class="row">
+      <input type="text" id="new-passcode" placeholder="4+ characters" autocomplete="off" style="flex:1">
+      <button class="btn-sm" id="gen-passcode" type="button" title="Generate a random passcode">🎲</button>
+    </div>
+    <button class="btn-sm" id="add-user" type="button" style="margin-top:10px;width:100%">+ Add tester</button>
+    <p class="hint" id="add-result" style="margin-top:6px;min-height:14px"></p>
+  </div>
+
+  <div class="card">
+    <div class="section-label">Existing testers</div>
+    <div id="users-list" class="hint">Enter the API token above to load testers.</div>
+  </div>
+</div>
+<div id="toasts" aria-live="assertive"></div>
+
+<script>
+"use strict";
+const DEFAULT_REMOTE = "https://jobfinder-backend-9jcf.onrender.com";
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+  set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch {} },
+};
+function apiBase() {
+  const h = location.hostname;
+  return (location.protocol === "file:" || h === "localhost" || h === "127.0.0.1") ? "http://localhost:8000" : DEFAULT_REMOTE;
+}
+const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ESC[c]);
+const $ = id => document.getElementById(id);
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({ "Accept": "application/json" }, opts.headers || {});
+  const tok = $("api-token").value.trim();
+  if (tok) headers["Authorization"] = `Bearer ${tok}`;
+  return fetch(apiBase() + path, Object.assign({}, opts, { headers, mode: "cors" }));
+}
+
+function toast(msg, err = false) {
+  const t = document.createElement("div");
+  t.className = "toast" + (err ? " err" : "");
+  t.textContent = msg;
+  $$toasts.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+const $$toasts = document.getElementById("toasts");
+
+function genPasscode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  $("new-passcode").value = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, "").slice(0, 12);
+}
+
+async function addUser() {
+  const user_id = $("new-user-id").value.trim();
+  const passcode = $("new-passcode").value;
+  const out = $("add-result");
+  if (!$("api-token").value.trim()) { out.style.color = "var(--red)"; out.textContent = "Enter the API token first."; return; }
+  if (!user_id || passcode.length < 4) { out.style.color = "var(--red)"; out.textContent = "Enter a user ID and a passcode of 4+ characters."; return; }
+  const btn = $("add-user");
+  btn.disabled = true; btn.textContent = "Adding…";
+  try {
+    const res = await api("/admin/add-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id, passcode }) });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || "failed to add tester");
+    out.style.color = "var(--green)";
+    out.textContent = `${j.created ? "Added" : "Reset passcode for"} "${j.user_id}". Give them the app URL + this passcode.`;
+    $("new-user-id").value = ""; $("new-passcode").value = "";
+    loadUsers();
+  } catch (e) {
+    out.style.color = "var(--red)";
+    out.textContent = e.message || "failed to add tester";
+  } finally {
+    btn.disabled = false; btn.textContent = "+ Add tester";
+  }
+}
+
+async function loadUsers() {
+  const list = $("users-list");
+  if (!$("api-token").value.trim()) { list.textContent = "Enter the API token above to load testers."; return; }
+  list.textContent = "Loading…";
+  try {
+    const res = await api("/admin/users");
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || "failed to load testers");
+    if (!j.users.length) { list.textContent = "No testers yet."; return; }
+    list.innerHTML = "";
+    for (const u of j.users) {
+      const row = document.createElement("div");
+      row.className = "user-row";
+      row.innerHTML = `<span>${esc(u.user_id)} <span class="hint">(${esc(u.created_at)})</span></span>`;
+      const btn = document.createElement("button");
+      btn.className = "btn-sm"; btn.type = "button"; btn.textContent = "Remove";
+      btn.addEventListener("click", () => removeUser(u.user_id, btn));
+      row.appendChild(btn);
+      list.appendChild(row);
+    }
+  } catch (e) {
+    list.textContent = e.message || "failed to load testers";
+  }
+}
+
+async function removeUser(user_id, btn) {
+  if (btn.textContent !== "Confirm?") { btn.textContent = "Confirm?"; return; }  // two-click confirm, no blocking dialog
+  btn.disabled = true;
+  try {
+    const res = await api(`/admin/users/${encodeURIComponent(user_id)}`, { method: "DELETE" });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || "failed to remove tester");
+    loadUsers();
+  } catch (e) {
+    toast(e.message || "failed to remove tester", true);
+    btn.disabled = false; btn.textContent = "Remove";
+  }
+}
+
+$("api-token").value = store.get("api_token");
+$("api-token").addEventListener("change", () => { store.set("api_token", $("api-token").value.trim()); loadUsers(); });
+$("gen-passcode").addEventListener("click", genPasscode);
+$("add-user").addEventListener("click", addUser);
+if ($("api-token").value) loadUsers();
+</script>
+</body>
+</html>
