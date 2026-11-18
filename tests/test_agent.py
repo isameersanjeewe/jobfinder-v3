@@ -504,6 +504,14 @@ assert c.get("/leads", headers={**AUTH, "Authorization": "Bearer s3cret-token"})
 assert c.get("/admin/users").status_code == 401                                           # admin endpoints need it too
 assert c.get("/admin/users", headers={"Authorization": "Bearer s3cret-token"}).status_code == 200
 assert c.options("/leads", headers={"Origin": "http://localhost", "Access-Control-Request-Method": "GET"}).status_code == 200
+# CORS preflight must allow the actual custom headers the frontend sends (X-Session-Token on every
+# authenticated call) -- a preflight that omits one silently breaks every such call in a real browser
+# while every non-browser test (curl, TestClient without this exact check) keeps appearing to work.
+preflight = c.options("/leads", headers={"Origin": "http://localhost", "Access-Control-Request-Method": "GET",
+                                          "Access-Control-Request-Headers": "x-session-token,authorization,content-type"})
+assert preflight.status_code == 200
+allowed = preflight.headers.get("access-control-allow-headers", "").lower()
+assert "x-session-token" in allowed and "authorization" in allowed, allowed
 main.API_TOKEN = ""
 assert c.get("/health").headers["x-content-type-options"] == "nosniff"
 print("SECURITY: validation, upload limits, no error leaks, run lock, background jobs, auth OK")
