@@ -14,10 +14,13 @@
 import base64
 import calendar
 import json
+import logging
 import os
 import time
 
 import requests
+
+log = logging.getLogger("jobfinder")
 
 DATA_REPO_TOKEN = os.getenv("DATA_REPO_TOKEN", "")   # fine-grained PAT: contents:write + actions:write on DATA_REPO only
 DATA_REPO = os.getenv("DATA_REPO", "")               # "owner/jobfinder-data"
@@ -59,6 +62,48 @@ def fetch_user_json(user_id: str, filename: str):
 def fetch_user_leads(user_id: str) -> list[dict]:
     data = fetch_user_json(user_id, "leads.json")
     return data if isinstance(data, list) else []
+
+
+def read_json(path: str):
+    """Reads any JSON file at `path` (repo-root-relative) from the private repo. None if disabled/missing/error."""
+    if not enabled():
+        return None
+    url = f"{API}/repos/{DATA_REPO}/contents/{path}"
+    try:
+        r = requests.get(url, headers=_headers(), params={"ref": DATA_REPO_BRANCH}, timeout=_TIMEOUT)
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return json.loads(base64.b64decode(r.json()["content"]).decode("utf-8"))
+    except Exception:
+        return None
+
+
+def write_json(path: str, data, message: str) -> bool:
+    """Creates or updates a JSON file at `path` (repo-root-relative) via the Contents API (get-sha-then-PUT,
+    so it works whether the file already exists or not). Used for the small shared files (e.g. the users
+    table) that aren't written by the GitHub Actions workflow itself. Returns True on success."""
+    if not enabled():
+        return False
+    url = f"{API}/repos/{DATA_REPO}/contents/{path}"
+    try:
+        sha = None
+        r = requests.get(url, headers=_headers(), params={"ref": DATA_REPO_BRANCH}, timeout=_TIMEOUT)
+        if r.status_code == 200:
+            sha = r.json().get("sha")
+        body = {
+            "message": message,
+            "content": base64.b64encode(json.dumps(data, indent=2).encode("utf-8")).decode("ascii"),
+            "branch": DATA_REPO_BRANCH,
+        }
+        if sha:
+            body["sha"] = sha
+        r = requests.put(url, headers=_headers(), json=body, timeout=_TIMEOUT)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        log.warning("data_repo.write_json(%s) failed: %s", path, e)
+        return False
 
 
 def trigger_run(user_id: str, rules: dict, resume_text: str = "", min_fit: int = 40, hours: int | None = None) -> dict:

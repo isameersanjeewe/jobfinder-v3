@@ -53,6 +53,15 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def _hydrate_users_from_data_repo():
+    """Render's free plan wipes local SQLite on every redeploy; pull existing testers' accounts back
+    from the private repo (if configured) before anyone tries to log in. See store.sync_users_from_repo."""
+    n = store.sync_users_from_repo()
+    if n:
+        log.info("Loaded %d user(s) from the data repo into the local cache", n)
+
+
 @app.middleware("http")
 async def auth_and_headers(request: Request, call_next):
     if API_TOKEN and request.method != "OPTIONS" and request.url.path not in PUBLIC_PATHS:
@@ -122,6 +131,11 @@ def UserId():
 
 
 class LoginParams(BaseModel):
+    user_id:  str = UserId()
+    passcode: str = Field(min_length=4, max_length=128)
+
+
+class AddUserParams(BaseModel):
     user_id:  str = UserId()
     passcode: str = Field(min_length=4, max_length=128)
 
@@ -271,6 +285,23 @@ def login(p: LoginParams):
         return JSONResponse({"error": "invalid user_id or passcode"}, status_code=401)
     token = auth.make_session_token(p.user_id)
     return {"token": token, "user_id": p.user_id, "expires_days": auth.SESSION_DAYS}
+
+
+@app.post("/admin/add-user")
+def admin_add_user(p: AddUserParams):
+    """Creates a tester or rotates their passcode. Owner-only: this endpoint is protected by the same
+    API_TOKEN bearer check as everything else (see PUBLIC_PATHS above) -- a new tester never has
+    API_TOKEN, so this can't be used for self-serve signup, matching backend/add_user.py's own intent.
+    Exists because Render's free plan has no Shell access to run that CLI script directly on the
+    deployed instance; call this instead, e.g.:
+      curl -X POST https://<your-render-url>/admin/add-user \\
+        -H "Authorization: Bearer <API_TOKEN>" -H "Content-Type: application/json" \\
+        -d '{"user_id": "...", "passcode": "..."}'
+    """
+    existed = store.user_exists(p.user_id)
+    store.create_user(p.user_id, p.passcode)
+    return {"created": not existed, "reset": existed, "user_id": p.user_id,
+            "synced_to_data_repo": data_repo.enabled()}
 
 
 @app.post("/search")

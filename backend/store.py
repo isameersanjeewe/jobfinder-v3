@@ -7,8 +7,10 @@
 import json, os, sqlite3
 from datetime import datetime
 from auth import hash_passcode, verify_passcode
+import data_repo
 
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "leads.db"))
+USERS_REPO_PATH = "data/_users.json"  # single shared file: {user_id: {salt, hash, created_at}}
 
 
 def _conn():
@@ -26,8 +28,10 @@ def _conn():
 
 # ── users (passcode auth) ─────────────────────────────────────────────────────
 def create_user(user_id: str, passcode: str) -> None:
-    """Creates a user or resets their passcode. No self-serve endpoint calls this -- only
-    backend/add_user.py, run by the owner. Idempotent: re-running with a new passcode rotates it."""
+    """Creates a user or resets their passcode. Idempotent: re-running with a new passcode rotates it.
+    Local SQLite (DB_PATH) is a fast-read cache that Render's free plan wipes on every redeploy -- when
+    data_repo is configured, this also writes through to the private repo's data/_users.json, which is
+    the durable copy. sync_users_from_repo() rehydrates the local cache from it at startup."""
     salt_hex, hash_hex = hash_passcode(passcode)
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     with _conn() as c:
@@ -35,6 +39,28 @@ def create_user(user_id: str, passcode: str) -> None:
             "INSERT INTO users (user_id, passcode_salt, passcode_hash, created_at) VALUES (?,?,?,?) "
             "ON CONFLICT(user_id) DO UPDATE SET passcode_salt=excluded.passcode_salt, passcode_hash=excluded.passcode_hash",
             (user_id, salt_hex, hash_hex, now))
+    if data_repo.enabled():
+        users = data_repo.read_json(USERS_REPO_PATH) or {}
+        users[user_id] = {"salt": salt_hex, "hash": hash_hex, "created_at": now}
+        data_repo.write_json(USERS_REPO_PATH, users, f"Add/update user {user_id}")
+
+
+def sync_users_from_repo() -> int:
+    """Pulls data/_users.json from the private repo into the local SQLite cache. Call once at backend
+    startup (see main.py) so a freshly-redeployed Render instance has existing testers' accounts before
+    anyone logs in. No-op (returns 0) if data_repo isn't configured. Never overwrites a user created
+    locally after the last repo write with older repo data -- repo is the source of truth when enabled,
+    so this always applies it, matching create_user() always writing through."""
+    if not data_repo.enabled():
+        return 0
+    users = data_repo.read_json(USERS_REPO_PATH) or {}
+    with _conn() as c:
+        for user_id, rec in users.items():
+            c.execute(
+                "INSERT INTO users (user_id, passcode_salt, passcode_hash, created_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(user_id) DO UPDATE SET passcode_salt=excluded.passcode_salt, passcode_hash=excluded.passcode_hash",
+                (user_id, rec["salt"], rec["hash"], rec.get("created_at", "")))
+    return len(users)
 
 
 def verify_user(user_id: str, passcode: str) -> bool:
