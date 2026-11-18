@@ -79,6 +79,28 @@ def read_json(path: str):
         return None
 
 
+def delete_json(path: str, message: str) -> bool:
+    """Deletes a file at `path` (repo-root-relative) via the Contents API. True if deleted; also True
+    (no-op) if it never existed, since the caller's intent -- 'this file shouldn't be here' -- is already
+    satisfied. False only on a real failure (disabled, or an error deleting a file that does exist)."""
+    if not enabled():
+        return False
+    url = f"{API}/repos/{DATA_REPO}/contents/{path}"
+    try:
+        r = requests.get(url, headers=_headers(), params={"ref": DATA_REPO_BRANCH}, timeout=_TIMEOUT)
+        if r.status_code == 404:
+            return True
+        r.raise_for_status()
+        sha = r.json()["sha"]
+        r = requests.delete(url, headers=_headers(),
+                             json={"message": message, "sha": sha, "branch": DATA_REPO_BRANCH}, timeout=_TIMEOUT)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        log.warning("data_repo.delete_json(%s) failed: %s", path, e)
+        return False
+
+
 def write_json(path: str, data, message: str) -> bool:
     """Creates or updates a JSON file at `path` (repo-root-relative) via the Contents API (get-sha-then-PUT,
     so it works whether the file already exists or not). Used for the small shared files (e.g. the users

@@ -7,7 +7,7 @@
 #   POST /feedback     → thumbs up/down per job, adjusts future scoring
 #   GET  /usage        → daily API call counter per source
 
-from fastapi import FastAPI, UploadFile, File, Request, Depends, Header, HTTPException
+from fastapi import FastAPI, UploadFile, File, Request, Depends, Header, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
@@ -48,7 +48,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Accept", "Authorization"],
 )
 
@@ -302,6 +302,22 @@ def admin_add_user(p: AddUserParams):
     store.create_user(p.user_id, p.passcode)
     return {"created": not existed, "reset": existed, "user_id": p.user_id,
             "synced_to_data_repo": data_repo.enabled()}
+
+
+@app.get("/admin/users")
+def admin_list_users():
+    """Lists all testers (user_id + created_at, no passcode data). Same owner-only API_TOKEN gate."""
+    return {"users": store.list_users()}
+
+
+@app.delete("/admin/users/{user_id}")
+def admin_remove_user(user_id: Annotated[str, Path(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.@-]+$")]):
+    """Removes a tester's account and all their data (leads, seen, profile), locally and in the private
+    data repo when configured. Same owner-only API_TOKEN gate as the rest of /admin/*."""
+    existed = store.delete_user(user_id)
+    if not existed:
+        return JSONResponse({"error": f"no such user '{user_id}'"}, status_code=404)
+    return {"removed": True, "user_id": user_id}
 
 
 @app.post("/search")

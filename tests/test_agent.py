@@ -417,6 +417,20 @@ assert c.get("/leads").status_code == 401                                # no se
 assert c.get("/leads", headers={"X-Session-Token": "garbage.notasig"}).status_code == 401  # bad session token
 print("AUTH: correct/incorrect passcode, session token issue/verify/tamper OK")
 
+# ── admin: list/add/remove testers (owner-only endpoints; gated by API_TOKEN like everything else,
+# tested separately below -- here just the list/remove behavior itself with API_TOKEN unset) ──
+store.create_user("tmp-remove-me", "throwaway-pass-1")
+ids_before = {u["user_id"] for u in store.list_users()}
+assert {"api", "api7", "bg", "flt", "tmp-remove-me"} <= ids_before
+lr2 = c.get("/admin/users")
+assert lr2.status_code == 200 and "tmp-remove-me" in {u["user_id"] for u in lr2.json()["users"]}
+assert c.delete("/admin/users/no-such-user-xyz").status_code == 404
+assert store.delete_user("tmp-remove-me") is True                        # removes user + their leads/seen/profile
+assert store.delete_user("tmp-remove-me") is False                       # already gone
+assert "tmp-remove-me" not in {u["user_id"] for u in store.list_users()}
+assert c.post("/auth/login", json={"user_id": "tmp-remove-me", "passcode": "throwaway-pass-1"}).status_code == 401
+print("ADMIN: list/add/remove testers OK")
+
 print("/agent/run", c.post("/agent/run", json={"resume_text":resume}, headers=AUTH).status_code)
 assert c.post("/agent/run", json={"resume_text":resume,"hours":168}, headers=AUTH7).status_code == 200
 print("/leads json", c.get("/leads", headers=AUTH).json()["count"])
@@ -487,6 +501,8 @@ assert c.get("/leads", headers=AUTH).status_code == 401                         
 assert c.get("/leads", headers={**AUTH, "Authorization": "Bearer wrong"}).status_code == 401
 assert c.post("/export/sheets", json={}).status_code == 401
 assert c.get("/leads", headers={**AUTH, "Authorization": "Bearer s3cret-token"}).status_code == 200
+assert c.get("/admin/users").status_code == 401                                           # admin endpoints need it too
+assert c.get("/admin/users", headers={"Authorization": "Bearer s3cret-token"}).status_code == 200
 assert c.options("/leads", headers={"Origin": "http://localhost", "Access-Control-Request-Method": "GET"}).status_code == 200
 main.API_TOKEN = ""
 assert c.get("/health").headers["x-content-type-options"] == "nosniff"

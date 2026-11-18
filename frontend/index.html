@@ -191,6 +191,9 @@ main { padding:20px 24px; min-width:0; }
       </div>
       <button class="btn-sm" id="bootstrap-add-user" type="button" style="margin-top:8px;width:100%">+ Add tester</button>
       <p class="hint" id="bootstrap-result" style="margin-top:6px;min-height:14px"></p>
+
+      <div class="section-label" style="margin-top:16px">Existing testers</div>
+      <div id="bootstrap-users-list" class="hint">Loading…</div>
     </div>
   </div>
 </div>
@@ -287,19 +290,7 @@ main { padding:20px 24px; min-width:0; }
       <input type="password" id="api-token" autocomplete="off">
       <button class="btn-sm" id="save-conn" type="button" style="margin-top:8px">Save</button>
       <p class="hint" style="margin-top:6px">Stored only in this browser.</p>
-
-      <div id="admin-panel" hidden>
-        <div class="section-label" style="margin-top:14px">Add a tester (owner only)</div>
-        <label for="admin-user-id">User ID</label>
-        <input type="text" id="admin-user-id" placeholder="e.g. a short handle or email" autocomplete="off">
-        <label for="admin-passcode">Passcode</label>
-        <div class="row" style="gap:6px">
-          <input type="text" id="admin-passcode" placeholder="4+ characters" autocomplete="off" style="flex:1">
-          <button class="btn-sm" id="admin-gen-passcode" type="button" title="Generate a random passcode">🎲</button>
-        </div>
-        <button class="btn-sm" id="admin-add-user" type="button" style="margin-top:8px;width:100%">+ Add tester</button>
-        <p class="hint" style="margin-top:6px">Uses the API token above (needs the API_TOKEN set in Connection settings, not a separate login). Give the new tester the app URL + the user ID + the passcode.</p>
-      </div>
+      <p class="hint" id="admin-link-hint" hidden style="margin-top:6px">Manage testers at <a href="?admin=1">?admin=1</a> on the login screen.</p>
     </details>
 
     <div>
@@ -675,10 +666,11 @@ function sendFeedbackIssue() {
 // #app and is unreachable before any account exists -- a real chicken-and-egg otherwise: creating the
 // first account needs the Add Tester panel, which needs login, which needs an account). Shares the same
 // "api_token" localStorage key as Connection settings, so setting it here also fills it in there later. ──
+// The admin page does exactly two things: add a tester, and list/remove existing ones. Nothing else.
 function toggleBootstrap() {
   const p = $("bootstrap-panel");
   p.hidden = !p.hidden;
-  if (!p.hidden) $("bootstrap-api-token").value = store.get("api_token");
+  if (!p.hidden) { $("bootstrap-api-token").value = store.get("api_token"); loadBootstrapUsers(); }
 }
 function genBootstrapPasscode() {
   const bytes = crypto.getRandomValues(new Uint8Array(9));
@@ -702,6 +694,7 @@ async function bootstrapAddUser() {
     out.textContent = `${j.created ? "Added" : "Reset passcode for"} "${j.user_id}". Sign in above with it.`;
     $("login-user-id").value = user_id;
     $("bootstrap-user-id").value = ""; $("bootstrap-passcode").value = "";
+    loadBootstrapUsers();
   } catch (e) {
     out.style.color = "var(--red)";
     out.textContent = e.message || "failed to add tester";
@@ -709,29 +702,44 @@ async function bootstrapAddUser() {
     btn.disabled = false; btn.textContent = "+ Add tester";
   }
 }
-
-// ── admin: add a tester (owner only -- gated server-side by the API_TOKEN bearer check, same as every
-// other endpoint; this just saves running the equivalent curl command by hand each time) ──
-function genPasscode() {
-  const bytes = crypto.getRandomValues(new Uint8Array(9));
-  $("admin-passcode").value = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, "").slice(0, 12);
-}
-async function addTester() {
-  const user_id = $("admin-user-id").value.trim();
-  const passcode = $("admin-passcode").value;
-  if (!user_id || passcode.length < 4) { toast("Enter a user ID and a passcode of 4+ characters", true); return; }
-  const btn = $("admin-add-user");
-  btn.disabled = true; btn.textContent = "Adding…";
+async function loadBootstrapUsers() {
+  const tok = $("bootstrap-api-token").value.trim();
+  const list = $("bootstrap-users-list");
+  if (!tok) { list.textContent = "Enter the API token above to see testers."; return; }
+  store.set("api_token", tok);
+  list.textContent = "Loading…";
   try {
-    const res = await postJSON("/admin/add-user", { user_id, passcode });
+    const res = await api("/admin/users");
     const j = await res.json();
-    if (!res.ok) throw new Error(j.error || "failed to add tester");
-    toast(`${j.created ? "Added" : "Reset passcode for"} "${j.user_id}". Give them the app URL + this passcode.`);
-    $("admin-user-id").value = ""; $("admin-passcode").value = "";
+    if (!res.ok) throw new Error(j.error || "failed to load testers");
+    if (!j.users.length) { list.textContent = "No testers yet."; return; }
+    list.innerHTML = "";
+    for (const u of j.users) {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.style.cssText = "justify-content:space-between;align-items:center;margin-top:6px";
+      row.innerHTML = `<span>${esc(u.user_id)} <span class="hint">(${esc(u.created_at)})</span></span>`;
+      const btn = document.createElement("button");
+      btn.className = "btn-sm"; btn.type = "button"; btn.textContent = "Remove";
+      btn.addEventListener("click", () => removeTester(u.user_id, btn));
+      row.appendChild(btn);
+      list.appendChild(row);
+    }
   } catch (e) {
-    toast(e.message || "failed to add tester", true);
-  } finally {
-    btn.disabled = false; btn.textContent = "+ Add tester";
+    list.textContent = e.message || "failed to load testers";
+  }
+}
+async function removeTester(user_id, btn) {
+  if (btn.textContent !== "Confirm?") { btn.textContent = "Confirm?"; return; }  // two-click confirm, no blocking dialog
+  btn.disabled = true;
+  try {
+    const res = await api(`/admin/users/${encodeURIComponent(user_id)}`, { method: "DELETE" });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || "failed to remove tester");
+    loadBootstrapUsers();
+  } catch (e) {
+    toast(e.message || "failed to remove tester", true);
+    btn.disabled = false; btn.textContent = "Remove";
   }
 }
 
@@ -803,8 +811,6 @@ $("logout-btn").addEventListener("click", logout);
 $("feedback-btn").addEventListener("click", openFeedback);
 $("feedback-cancel").addEventListener("click", closeFeedback);
 $("feedback-send").addEventListener("click", sendFeedbackIssue);
-$("admin-gen-passcode").addEventListener("click", genPasscode);
-$("admin-add-user").addEventListener("click", addTester);
 $("bootstrap-toggle").addEventListener("click", toggleBootstrap);
 $("bootstrap-gen-passcode").addEventListener("click", genBootstrapPasscode);
 $("bootstrap-add-user").addEventListener("click", bootstrapAddUser);
@@ -838,7 +844,7 @@ $("save-conn").addEventListener("click", () => {
 // This is a UI-visibility convenience only, not the real security boundary -- /admin/add-user still
 // requires the actual API_TOKEN server-side either way, so this just stops testers from seeing the control. ──
 if (new URLSearchParams(location.search).get("admin") === "1") store.set("admin_ui", "1");
-if (store.get("admin_ui") === "1") { $("bootstrap-toggle").hidden = false; $("admin-panel").hidden = false; }
+if (store.get("admin_ui") === "1") { $("bootstrap-toggle").hidden = false; $("admin-link-hint").hidden = false; }
 
 if (store.get("session_token")) showApp(); else showLogin();
 </script>

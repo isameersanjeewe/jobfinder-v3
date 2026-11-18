@@ -77,6 +77,32 @@ def user_exists(user_id: str) -> bool:
         return c.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone() is not None
 
 
+def list_users() -> list[dict]:
+    """All testers, oldest first. Used by the admin UI's user list."""
+    with _conn() as c:
+        rows = c.execute("SELECT user_id, created_at FROM users ORDER BY created_at").fetchall()
+    return [{"user_id": r[0], "created_at": r[1]} for r in rows]
+
+
+def delete_user(user_id: str) -> bool:
+    """Removes a tester's account and all their data (leads, seen, profile) -- both the local cache and,
+    when configured, the durable private-repo copies (data/_users.json entry and their data/<user_id>/
+    leads.json + seen.json files). Returns False if the user didn't exist, True otherwise."""
+    existed = user_exists(user_id)
+    with _conn() as c:
+        c.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+        c.execute("DELETE FROM leads WHERE user_id=?", (user_id,))
+        c.execute("DELETE FROM seen WHERE user_id=?", (user_id,))
+        c.execute("DELETE FROM profiles WHERE user_id=?", (user_id,))
+    if data_repo.enabled():
+        users = data_repo.read_json(USERS_REPO_PATH) or {}
+        if users.pop(user_id, None) is not None:
+            data_repo.write_json(USERS_REPO_PATH, users, f"Remove user {user_id}")
+        data_repo.delete_json(f"data/{user_id}/leads.json", f"Remove leads for {user_id}")
+        data_repo.delete_json(f"data/{user_id}/seen.json", f"Remove seen for {user_id}")
+    return existed
+
+
 # ── profiles (per-user rules.json override; see rules_service.load_rules) ────
 def get_profile(user_id: str) -> dict | None:
     """The user's saved profile (full rules dict), or None if they have none yet (caller falls back
