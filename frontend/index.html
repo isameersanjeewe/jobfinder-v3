@@ -177,7 +177,7 @@ main { padding:20px 24px; min-width:0; }
     <p class="hint" id="login-error" style="color:var(--red); margin-top:8px; min-height:14px"></p>
     <button class="btn" id="login-submit" type="button" style="margin-top:6px">Sign in</button>
 
-    <button class="btn-sm" id="bootstrap-toggle" type="button" style="margin-top:14px;width:100%">⚙ Owner setup / add first tester</button>
+    <button class="btn-sm" id="bootstrap-toggle" type="button" hidden style="margin-top:14px;width:100%">⚙ Owner setup / add first tester</button>
     <div id="bootstrap-panel" hidden style="margin-top:10px;text-align:left">
       <label for="bootstrap-api-token">API token (API_TOKEN)</label>
       <input type="password" id="bootstrap-api-token" autocomplete="off">
@@ -288,16 +288,18 @@ main { padding:20px 24px; min-width:0; }
       <button class="btn-sm" id="save-conn" type="button" style="margin-top:8px">Save</button>
       <p class="hint" style="margin-top:6px">Stored only in this browser.</p>
 
-      <div class="section-label" style="margin-top:14px">Add a tester (owner only)</div>
-      <label for="admin-user-id">User ID</label>
-      <input type="text" id="admin-user-id" placeholder="e.g. a short handle or email" autocomplete="off">
-      <label for="admin-passcode">Passcode</label>
-      <div class="row" style="gap:6px">
-        <input type="text" id="admin-passcode" placeholder="4+ characters" autocomplete="off" style="flex:1">
-        <button class="btn-sm" id="admin-gen-passcode" type="button" title="Generate a random passcode">🎲</button>
+      <div id="admin-panel" hidden>
+        <div class="section-label" style="margin-top:14px">Add a tester (owner only)</div>
+        <label for="admin-user-id">User ID</label>
+        <input type="text" id="admin-user-id" placeholder="e.g. a short handle or email" autocomplete="off">
+        <label for="admin-passcode">Passcode</label>
+        <div class="row" style="gap:6px">
+          <input type="text" id="admin-passcode" placeholder="4+ characters" autocomplete="off" style="flex:1">
+          <button class="btn-sm" id="admin-gen-passcode" type="button" title="Generate a random passcode">🎲</button>
+        </div>
+        <button class="btn-sm" id="admin-add-user" type="button" style="margin-top:8px;width:100%">+ Add tester</button>
+        <p class="hint" style="margin-top:6px">Uses the API token above (needs the API_TOKEN set in Connection settings, not a separate login). Give the new tester the app URL + the user ID + the passcode.</p>
       </div>
-      <button class="btn-sm" id="admin-add-user" type="button" style="margin-top:8px;width:100%">+ Add tester</button>
-      <p class="hint" style="margin-top:6px">Uses the API token above (needs the API_TOKEN set in Connection settings, not a separate login). Give the new tester the app URL + the user ID + the passcode.</p>
     </details>
 
     <div>
@@ -831,6 +833,13 @@ $("save-conn").addEventListener("click", () => {
   store.set("api_url", u); store.set("api_token", $("api-token").value.trim());
   toast("Connection saved."); checkConnection(); if (!savedFilters()) initFilters();
 });
+// ── admin UI visibility: hidden from every normal visitor/tester. Only shown via a private link
+// (?admin=1), and remembered in this browser afterward so the owner doesn't have to keep adding it.
+// This is a UI-visibility convenience only, not the real security boundary -- /admin/add-user still
+// requires the actual API_TOKEN server-side either way, so this just stops testers from seeing the control. ──
+if (new URLSearchParams(location.search).get("admin") === "1") store.set("admin_ui", "1");
+if (store.get("admin_ui") === "1") { $("bootstrap-toggle").hidden = false; $("admin-panel").hidden = false; }
+
 if (store.get("session_token")) showApp(); else showLogin();
 </script>
 </body>
