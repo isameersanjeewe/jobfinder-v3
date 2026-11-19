@@ -30,6 +30,9 @@ on:
         default: ""
 permissions:
   contents: write   # needed to commit data/<user_id>/leads.json + seen.json back into this repo
+concurrency:
+  group: data-repo-writes   # shared with scheduled-agent.yml: both commit data/
+  cancel-in-progress: false
 jobs:
   run:
     runs-on: ubuntu-latest

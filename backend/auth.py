@@ -25,9 +25,18 @@ SESSION_SECRET = os.getenv("SESSION_SECRET", "")
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "30"))
 PBKDF2_ITERATIONS = 200_000
 
+# Fail closed: never sign with an empty key (anyone could forge a token for any user). A random
+# per-process fallback keeps local dev working; sessions just end whenever the process restarts.
+_FALLBACK_SECRET = secrets.token_urlsafe(32)
+
+
+def _key() -> bytes:
+    return (SESSION_SECRET or _FALLBACK_SECRET).encode("utf-8")
+
+
 if not SESSION_SECRET:
-    log.warning("SESSION_SECRET not set: session tokens are signed with an empty secret "
-                "(fine for localhost, unsafe when deployed -- set it on Render like API_TOKEN)")
+    log.warning("SESSION_SECRET not set: using a random per-process secret, so every restart logs all "
+                "users out -- set SESSION_SECRET on Render (see docs/MULTI_USER_SETUP.md)")
 
 
 def hash_passcode(passcode: str, salt: bytes | None = None) -> tuple[str, str]:
@@ -52,7 +61,7 @@ def make_session_token(user_id: str, days: int | None = None) -> str:
     expiry = int(time.time()) + (days or SESSION_DAYS) * 86400
     payload = f"{user_id}:{expiry}"
     payload_b64 = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
-    sig = hmac.new(SESSION_SECRET.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256).hexdigest()
+    sig = hmac.new(_key(), payload_b64.encode("ascii"), hashlib.sha256).hexdigest()
     return f"{payload_b64}.{sig}"
 
 
@@ -66,7 +75,7 @@ def verify_session_token(token: str) -> str | None:
         # payload_b64/sig come straight from client input: a non-ASCII byte (e.g. a raw Latin-1 header
         # byte an ASGI server decoded as-is) would make .encode("ascii") or hmac.compare_digest raise --
         # keep the whole signature check inside this try so garbage input fails closed, never raises.
-        expected = hmac.new(SESSION_SECRET.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256).hexdigest()
+        expected = hmac.new(_key(), payload_b64.encode("ascii"), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, expected):
             return None
         padded = payload_b64 + "=" * (-len(payload_b64) % 4)

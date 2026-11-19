@@ -6,7 +6,7 @@
 # Profile resolution (first found wins): env RULES_JSON (the JSON itself, e.g. a CI secret) ->
 # env RULES_PATH -> backend/rules.json (personal, gitignored) -> backend/rules.example.json (committed template).
 
-import json, os, re
+import hashlib, json, os, re
 from datetime import datetime, timedelta, timezone
 import data_repo
 
@@ -106,13 +106,42 @@ def record_no_sponsorship(company: str, count: int = 1, local_path: str | None =
     same shared, durable store as save_company_signal() (see COMPANY_SIGNALS_REPO_PATH)."""
     path = local_path or RULES_LOCAL_PATH
     data = _read_local(path)
-    entry = data.setdefault("company_signals", {}).setdefault(company.lower(), {})
-    entry["no_sponsorship_count"] = entry.get("no_sponsorship_count", 0) + count
-    entry["auto_reject"] = entry["no_sponsorship_count"] >= AUTO_REJECT_THRESHOLD
-    entry.setdefault("date", datetime.now().strftime("%Y-%m-%d"))
+    entry = _bump_no_sponsorship(data, company, count=count)
     _atomic_write(path, data)
     _write_through_company_signals(data["company_signals"])
     return entry
+
+
+NO_SPONSORSHIP_URLS_KEPT = 50  # per company; bounded so the shared JSON can't grow without limit
+
+
+def _bump_no_sponsorship(data: dict, company: str, count: int = 0, urls=None) -> dict:
+    """Mutates `data` in place. With `urls`, counts only postings never counted before (stored as short
+    hashes), so the same still-open posting seen on every daily run counts once, not once per run."""
+    entry = data.setdefault("company_signals", {}).setdefault(company.lower(), {})
+    if urls is not None:
+        known = list(entry.get("no_sponsorship_urls", []))
+        fresh = {hashlib.sha256(u.encode("utf-8")).hexdigest()[:16] for u in urls if u} - set(known)
+        count = len(fresh)
+        entry["no_sponsorship_urls"] = (known + sorted(fresh))[-NO_SPONSORSHIP_URLS_KEPT:]
+    entry["no_sponsorship_count"] = entry.get("no_sponsorship_count", 0) + count
+    entry["auto_reject"] = entry["no_sponsorship_count"] >= AUTO_REJECT_THRESHOLD
+    entry.setdefault("date", datetime.now().strftime("%Y-%m-%d"))
+    return entry
+
+
+def record_no_sponsorship_hits(hits: dict, local_path: str | None = None) -> dict:
+    """Batch form used at run end: {company: {posting urls}} -> one local write and ONE write-through to
+    the data repo for the whole run (was one GitHub commit per company). URL-deduped across runs."""
+    hits = {co: urls for co, urls in hits.items() if co and urls}
+    if not hits:
+        return {}
+    path = local_path or RULES_LOCAL_PATH
+    data = _read_local(path)
+    out = {co: _bump_no_sponsorship(data, co, urls=urls) for co, urls in hits.items()}
+    _atomic_write(path, data)
+    _write_through_company_signals(data["company_signals"])
+    return out
 
 
 def company_auto_reject(company: str, rules: dict) -> bool:

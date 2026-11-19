@@ -1,0 +1,84 @@
+# Agent v1 scheduler: runs an agent cycle (backend/agent_mode.py) for every user with agent mode enabled
+# whose interval has elapsed -- all due users batched into ONE job. Two checks per weekday, not hourly:
+# every Actions run bills at least 1 minute, and a no-one-due check exits before installing anything.
+# The cycle reuses the latest saved Full Search leads + the user's watchlist boards; it never runs the
+# ~15-min full scrape. Drafts only: nothing is applied to or sent.
+#
+# Optional repo secrets (this private repo): LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL (e.g. Groq
+# free tier). Unset = deterministic picks + template kits. RESUME_TEXT / RULES_JSON only as fallbacks.
+# run-agent.yml is unchanged; both write data/, so they share the concurrency group below.
+name: scheduled-agent
+on:
+  schedule:
+    - cron: "20 12 * * 1-5"   # ~7-8am US Eastern, weekdays
+    - cron: "20 21 * * 1-5"   # ~4-5pm US Eastern, weekdays
+  workflow_dispatch:
+permissions:
+  contents: write   # commit data/<user_id>/agent.json + leads.json back into this repo
+concurrency:
+  group: data-repo-writes
+  cancel-in-progress: false
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out this data repo
+        uses: actions/checkout@v4
+        with:
+          path: data-repo
+      - name: Anyone due?
+        id: check
+        working-directory: data-repo
+        run: python3 scripts/run_agent_cycle.py --check
+      - name: Check out the public app repo (read-only, for the agent code)
+        if: steps.check.outputs.due == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.APP_REPO || 'isameersanjeewe/jobfinder-v3' }}
+          # Pin to a reviewed commit: set repo variable APP_REF to a commit SHA (this job holds the push token
+          # and LLM key). Unset = main.
+          ref: ${{ vars.APP_REF || 'main' }}
+          path: app-src
+      - uses: actions/setup-python@v5
+        if: steps.check.outputs.due == 'true'
+        with:
+          python-version: "3.11"
+      - if: steps.check.outputs.due == 'true'
+        run: pip install -r app-src/backend/requirements.txt
+      - name: Run agent cycles for due users
+        if: steps.check.outputs.due == 'true'
+        working-directory: data-repo
+        env:
+          APP_BACKEND_DIR: ${{ github.workspace }}/app-src/backend
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          RESUME_TEXT: ${{ secrets.RESUME_TEXT }}
+          RULES_JSON: ${{ secrets.RULES_JSON }}
+        run: python scripts/run_agent_cycle.py
+      - name: Commit agent state (rebase + retry so concurrent pushes don't lose data)
+        if: steps.check.outputs.due == 'true'
+        working-directory: data-repo
+        run: |
+          git config user.name "jobfinder-data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/*/agent.json data/*/leads.json 2>/dev/null || true
+          git diff --cached --quiet && { echo "no changes"; exit 0; }
+          # Whole-file writes, never hunk-merged: a line-level merge of two JSON versions can produce invalid
+          # JSON. Save this cycle's files, then on each attempt start from the latest remote and copy them over.
+          changed=$(git diff --cached --name-only)
+          stash=$(mktemp -d); for f in $changed; do mkdir -p "$stash/$(dirname "$f")"; cp "$f" "$stash/$f"; done
+          for f in $changed; do python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"; done
+          for i in 1 2 3 4 5; do
+            git fetch origin "${GITHUB_REF_NAME}" && git reset -q --hard "origin/${GITHUB_REF_NAME}"
+            for f in $changed; do mkdir -p "$(dirname "$f")"; cp "$stash/$f" "$f"; done
+            git add $changed
+            git diff --cached --quiet && { echo "no changes after sync"; exit 0; }
+            git commit -q -m "Agent cycle $(date -u +%Y-%m-%dT%H:%MZ)"
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
+            sleep $((i * 5))
+          done
+          echo "push failed after 5 attempts" >&2
+          exit 1

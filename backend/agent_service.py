@@ -15,7 +15,7 @@ import datetime, json, os, re, requests
 from scraper_service import fetch_remotive
 from free_sources import fetch_jobspy, fetch_ats
 from rules_service import (load_rules, apply_gate, save_company_signal, search_queries,
-                            record_no_sponsorship, sponsorship_answer)
+                            record_no_sponsorship_hits, sponsorship_answer)
 from fit_service import keyword_fit, score_lead, llm_gap_fit, llm_configured
 from contacts import linkedin_people_url
 import store
@@ -125,7 +125,9 @@ class AgentRun:
             job["company_h1b"] = sig
             if job["posting_visa"] != "No":
                 job["gate"] = "pass" if sig in ("Strong", "Moderate") else f"company_{sig.lower()}"
-        if track == "ft" and job.get("posting_visa") == "No" and job.get("company"):
+        if track == "ft" and job["gate"] == "posting_no_sponsorship" and job.get("company"):
+            # only postings that passed title/geo/recency (gate order in apply_gate) -- a "no sponsorship"
+            # warehouse or sales role at a target employer must not auto-reject that employer for PM roles
             # roadmap item 5: accumulate this run's explicit no-sponsorship detections per company,
             # deduped by URL -- flushed to the shared, durable auto-reject store at run end (result()).
             self._no_sponsorship_hits.setdefault(job["company"].lower(), set()).add(job.get("url", ""))
@@ -429,12 +431,10 @@ class AgentRun:
     def result(self):
         # roadmap item 5: flush this run's accumulated no-sponsorship detections into the shared, durable
         # auto-reject counter -- one write per company seen (not per posting). Applies starting next run.
-        for co, urls in self._no_sponsorship_hits.items():
-            if urls:
-                try:
-                    record_no_sponsorship(co, len(urls))
-                except OSError:
-                    pass  # read-only disk (e.g. some hosts): keep in-run signal only, matches set_company_signal
+        try:
+            record_no_sponsorship_hits(self._no_sponsorship_hits)  # one write per run, URL-deduped across runs
+        except OSError:
+            pass  # read-only disk (e.g. some hosts): keep in-run signal only, matches set_company_signal
         new = store.mark_seen([j["url"] for j in self.saved], self.user_id)
         for j in self.saved:
             j["is_new"] = j["url"] in new

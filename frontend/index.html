@@ -11,6 +11,7 @@
   --bg:#f3f3ef; --ink:#171714; --muted:#726f68; --border:#e2e0d8; --surface:#ffffff; --soft:#faf9f5;
   --green:#157f45; --green-bg:#dcf5e6; --red:#c0271a; --red-bg:#fde3e1; --amber:#9a6400; --amber-bg:#fdf0d2;
   --blue:#4338ca; --blue-bg:#eae7fd; --hot:#c2410c; --hot-bg:#ffe9d9; --agent:#0f7a63; --agent-bg:#def4ec;
+  --duty:#7c3aed; --duty-bg:#f1eafe; --duty-ink:#ffffff;
   --mono:ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --display:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --radius:12px; --radius-sm:8px;
@@ -21,6 +22,7 @@
   :root { --bg:#131312; --ink:#eeede8; --muted:#9b998f; --border:#2d2c28; --surface:#1b1b19; --soft:#201f1c;
     --green:#4fd58a; --green-bg:#133524; --red:#ff8a7a; --red-bg:#3a1a16; --amber:#f2c14e; --amber-bg:#352a0e;
     --blue:#a9a0ff; --blue-bg:#24204a; --hot:#ff9b5a; --hot-bg:#3b2410; --agent:#3ddbb2; --agent-bg:#123630;
+    --duty:#c4a5ff; --duty-bg:#2a1f45; --duty-ink:#1a1030;
     --shadow-sm:0 1px 2px rgba(0,0,0,.35); --shadow-md:0 10px 24px rgba(0,0,0,.4); }
 }
 * { box-sizing:border-box; margin:0; padding:0; }
@@ -161,7 +163,50 @@ main { padding:20px 24px; min-width:0; }
 .session-info { display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--muted); }
 .fb-panel { margin-top:8px; }
 
+/* ── top-level tabs: Search (you drive) vs Agent (works for you) ── */
+.tabs { display:flex; gap:4px; padding:0 26px; background:var(--surface); border-bottom:1px solid var(--border); }
+.tab { background:none; border:none; border-bottom:3px solid transparent; padding:11px 16px 9px; cursor:pointer; text-align:left; color:var(--muted); }
+.tab b { display:block; font-size:14px; color:var(--ink); }
+.tab span { font-size:11px; letter-spacing:.04em; text-transform:uppercase; }
+.tab[aria-selected="true"][data-tab="search"] { border-bottom-color:var(--ink); }
+.tab[aria-selected="true"][data-tab="agent"] { border-bottom-color:var(--duty); }
+.tab[data-tab="agent"] b { color:var(--duty); }
+.agent-tab { padding:20px 24px; display:flex; flex-direction:column; gap:16px; }
+.card.duty { border-color:var(--duty); background:var(--duty-bg); display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; }
+.duty-main { display:flex; align-items:center; gap:12px; }
+.duty-title { font-size:16px; font-weight:700; color:var(--duty); }
+.duty-controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.duty-controls select { width:auto; }
+.duty-toggle { width:auto; border:1px solid var(--duty); border-radius:var(--radius-sm); padding:8px 12px; background:var(--surface); }
+.duty-toggle[aria-pressed="true"] .switch { background:var(--duty); }
+.dot.on { background:var(--duty); box-shadow:0 0 0 3px var(--duty-bg), 0 0 0 4px var(--duty); }
+.btn.duty-btn { width:auto; padding:9px 16px; background:var(--duty); color:var(--duty-ink); }
+.agent-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:16px; align-items:start; }
+.agent-col { display:flex; flex-direction:column; gap:16px; min-width:0; }
+.agent-tab .card { background:var(--surface); }
+.agent-tab .card.duty { background:var(--duty-bg); }
+.brief-head { font-size:15px; font-weight:700; margin-bottom:8px; }
+.alist { list-style:none; display:flex; flex-direction:column; gap:6px; }
+.alist li { padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--soft); font-size:13px; min-width:0; overflow-wrap:anywhere; }
+.alist li.sel { border-color:var(--duty); box-shadow:inset 3px 0 0 var(--duty); }
+.alist .meta { font-size:11.5px; color:var(--muted); margin-top:3px; }
+.kit-item { cursor:pointer; }
+.kit-row { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+.kit-detail h4 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:14px 0 6px; }
+.kit-detail ul { padding-left:18px; display:flex; flex-direction:column; gap:4px; font-size:13px; }
+.kit-detail .qa { border-top:1px solid var(--border); padding:8px 0; font-size:13px; }
+.kit-detail .qa b { display:block; margin-bottom:3px; }
+.flag-box { background:var(--amber-bg); color:var(--amber); border-radius:var(--radius-sm); padding:8px 10px; font-size:12px; margin-top:8px; }
+.badge-agent { display:inline-block; font-size:9.5px; letter-spacing:.06em; padding:2px 7px; border-radius:20px; background:var(--duty-bg); color:var(--duty); border:1px solid var(--duty); text-transform:uppercase; font-weight:700; margin-left:6px; vertical-align:middle; }
+.status-sel { width:auto !important; padding:4px 6px !important; font-size:11.5px !important; }
+.act-kind { font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--duty); margin-right:6px; }
+.watch-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.watch-chips .chip button { background:none; border:none; cursor:pointer; color:var(--muted); margin-left:4px; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+
 @media (max-width:820px) {
+  .agent-grid { grid-template-columns:minmax(0,1fr); }
+  .agent-tab, .tabs { padding-left:16px; padding-right:16px; }
   .shell { grid-template-columns:minmax(0,1fr); }
   .usage-pill { display:none; }
   aside { min-width:0; }
@@ -197,7 +242,12 @@ main { padding:20px 24px; min-width:0; }
     <div class="conn" title="Backend connection"><span class="dot" id="conn-dot"></span><span id="conn-text">connecting…</span></div>
   </div>
 </nav>
+<div class="tabs" role="tablist">
+  <button class="tab" type="button" role="tab" data-tab="search" aria-selected="true" aria-controls="tab-search"><b>Search</b><span>You drive</span></button>
+  <button class="tab" type="button" role="tab" data-tab="agent" aria-selected="false" aria-controls="tab-agent"><b>✦ Agent</b><span>Works for you</span></button>
+</div>
 
+<section id="tab-search" role="tabpanel">
 <div class="shell">
   <aside>
     <div class="card agent">
@@ -320,6 +370,65 @@ main { padding:20px 24px; min-width:0; }
     </div>
   </main>
 </div>
+</section>
+
+<section id="tab-agent" class="agent-tab" role="tabpanel" hidden>
+  <div class="card duty">
+    <div class="duty-main">
+      <span class="dot" id="duty-dot"></span>
+      <div>
+        <div class="duty-title" id="duty-title">Agent is off duty</div>
+        <div class="hint" id="duty-line">Turn it on to have it check your leads and watchlist on a schedule.</div>
+      </div>
+    </div>
+    <div class="duty-controls">
+      <button type="button" class="toggle-row duty-toggle" id="duty-toggle" aria-pressed="false"><span class="toggle-name">On duty</span><span class="switch"></span></button>
+      <select id="duty-interval" aria-label="How often the agent runs">
+        <option value="6">every 6h</option><option value="12">every 12h</option><option value="24" selected>daily</option>
+        <option value="48">every 2 days</option><option value="72">every 3 days</option><option value="168">weekly</option>
+      </select>
+      <button class="btn duty-btn" id="duty-run" type="button">Run now</button>
+    </div>
+  </div>
+  <p class="hint">The agent picks today's best leads from your saved Full Search results and your watchlist, and writes an apply kit for each. It never applies or sends anything: you review, copy and submit.</p>
+  <div class="agent-grid">
+    <div class="agent-col">
+      <div class="card">
+        <div class="section-label"><span>Today brief</span><span id="brief-date"></span></div>
+        <div id="brief"><p class="hint">No brief yet. Click Run now.</p></div>
+      </div>
+      <div class="card">
+        <div class="section-label"><span>Apply kits</span><span id="kits-count"></span></div>
+        <ul class="alist" id="kits"></ul>
+        <div class="kit-detail" id="kit-detail"></div>
+      </div>
+    </div>
+    <div class="agent-col">
+      <div class="card">
+        <div class="section-label"><span>Approvals inbox</span><span id="approvals-count"></span></div>
+        <ul class="alist" id="approvals"></ul>
+      </div>
+      <div class="card">
+        <div class="section-label">Watchlist</div>
+        <div class="watch-chips" id="watchlist"></div>
+        <div class="row"><input type="text" id="watch-add" placeholder="Company name" maxlength="100" aria-label="Add a company to the watchlist">
+          <button class="btn-sm" id="watch-add-btn" type="button">Add</button></div>
+        <p class="hint" style="margin-top:6px">Polled each run via public Greenhouse/Lever/Ashby boards.</p>
+      </div>
+      <details class="card">
+        <summary>Preferences</summary>
+        <label for="agent-notes">Notes for the agent <span class="hint">(plain sentences)</span></label>
+        <textarea id="agent-notes" rows="3" maxlength="2000" placeholder="Prefer healthcare and data platforms; avoid ad tech."></textarea>
+        <p class="hint" id="agent-resume-hint" style="margin-top:6px"></p>
+        <button class="btn-sm" id="agent-save" type="button" style="margin-top:8px">Save preferences</button>
+      </details>
+      <div class="card">
+        <div class="section-label">Activity</div>
+        <ul class="alist" id="activity"></ul>
+      </div>
+    </div>
+  </div>
+</section>
 </div>
 <div id="toasts" aria-live="assertive"></div>
 
@@ -423,7 +532,7 @@ function renderJobs() {
       ${agent || ai ? `<td><div class="score-wrap"><span class="score-num" style="color:${scoreColor(score)}">${score || "—"}</span>
         ${score ? `<div class="bar"><div style="width:${Math.min(100, score)}%;background:${scoreColor(score)}"></div></div>` : ""}
         ${agent && j.hot_lead ? '<span class="tag t-hot">HOT</span>' : ""}</div></td>` : ""}
-      <td><div class="job-title">${j.is_new ? '<span class="new-dot" title="New"></span>' : ""}${esc(j.title)}</div>
+      <td><div class="job-title">${j.is_new ? '<span class="new-dot" title="New"></span>' : ""}${esc(j.title)}${agentBadge(j.url)}</div>
           <div class="job-company">${esc(j.company)}${agent && j.track === "c2c" ? ' <span class="tag t-info">C2C</span>' : ""}</div></td>
       <td><span class="tag" title="${esc(j.location)}">${esc(j.location)}</span></td>
       <td><span class="tag ${H1B_CLASS[h1b] || ""}" title="Company sponsorship signal">${esc(h1b || "—")}</span>
@@ -433,6 +542,7 @@ function renderJobs() {
       <td><div class="fb-wrap">
         <button type="button" class="fb-btn up" data-fb="${i}" data-signal="up" aria-pressed="${fb === "up"}" title="Good fit" aria-label="Good fit">👍</button>
         <button type="button" class="fb-btn down" data-fb="${i}" data-signal="down" aria-pressed="${fb === "down"}" title="Not for me" aria-label="Not for me">👎</button>
+        ${agent ? statusSelect(j.url, `data-status-idx="${i}"`) : ""}
         ${hasDetails ? `<button type="button" class="btn-sm" data-more="${i}" aria-expanded="false" title="Contact, sponsorship answer, outreach draft">⋯</button>` : ""}
         ${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open →</a>` : ""}</div></td>
     </tr>${hasDetails ? `<tr class="job-details" id="jd-${i}" hidden><td colspan="${cols}"><div class="details-panel">
@@ -644,6 +754,8 @@ function showApp() {
   $("session-user-label").textContent = u ? `Signed in as ${u}` : "";
   checkConnection();
   initFilters();
+  showTab(store.get("tab") === "agent" ? "agent" : "search");
+  loadAgentState();
 }
 function sessionExpired() {
   store.set("session_token", ""); store.set("session_user", "");
@@ -745,6 +857,202 @@ $("f-reset").addEventListener("click", async () => {
   const p = await loadProfileFilters();
   if (p) fillFilters(p);
   toast("Using the server profile again.");
+});
+
+// ── Agent tab ("works for you"): /agentmode/* (backend/agent_mode.py). Everything rendered is escaped;
+// kit text is LLM/template output derived from untrusted postings, so it is shown as plain text only. ──
+const agentUI = { state: null, sel: "", fb: {}, polling: false };
+const LEAD_STATUSES = ["New", "Applied", "Interview", "Rejected", "Skipped"];
+const agentSurfaced = () => new Set(agentUI.state?.surfaced || []);
+const agentBadge = url => agentSurfaced().has(url) ? '<span class="badge-agent" title="Surfaced by the Agent">Agent</span>' : "";
+const leadStatus = url => agentUI.state?.statuses?.[url] || "New";
+function statusSelect(url, attrs) {
+  const cur = leadStatus(url);
+  return `<select class="status-sel" ${attrs} aria-label="Lead status">${LEAD_STATUSES.map(s =>
+    `<option${s === cur ? " selected" : ""}>${esc(s)}</option>`).join("")}</select>`;
+}
+const fmtWhen = iso => { if (!iso) return "never"; const d = new Date(iso); return isNaN(d) ? "never" : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); };
+
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
+  $("tab-search").hidden = name !== "search";
+  $("tab-agent").hidden = name !== "agent";
+  store.set("tab", name);
+  if (name === "agent") loadAgentState();
+}
+
+async function loadAgentState() {
+  try {
+    const r = await api("/agentmode/state");
+    if (!r.ok) return;
+    agentUI.state = await r.json();
+    renderAgent();
+    if (view.jobs.length) renderJobs();   // refresh badges/statuses in the Search tab too
+  } catch {}
+}
+
+function renderAgent() {
+  const st = agentUI.state; if (!st) return;
+  const s = st.settings || {};
+  $("duty-toggle").setAttribute("aria-pressed", String(!!s.enabled));
+  $("duty-interval").value = String(s.interval_hours || 24);
+  $("duty-dot").className = "dot" + (s.enabled ? " on" : "");
+  $("duty-title").textContent = st.running ? "Agent is working…" : s.enabled ? "Agent is on duty" : "Agent is off duty";
+  $("duty-line").textContent = `Last run: ${fmtWhen(s.last_run)} · Next run: ${s.enabled ? (s.next_run ? fmtWhen(s.next_run) : "at the next scheduled check") : "off"}`
+    + ` · ${s.llm ? "LLM picks + kits" : "rule-based picks + template kits (no LLM key)"}`;
+  $("duty-run").disabled = !!st.running;
+  if (document.activeElement !== $("agent-notes")) $("agent-notes").value = s.notes || "";
+  $("agent-resume-hint").textContent = s.has_resume ? "Resume saved for the agent. Upload a new one in the Search tab and save to replace it."
+    : "No resume saved: upload one in the Search tab, then Save preferences, so kits can be tailored.";
+
+  const b = st.brief || {};
+  $("brief-date").textContent = b.date || "";
+  const fu = (b.follow_ups || []).map(f => `<li><b>${esc(f.title)}</b> at ${esc(f.company)}<div class="meta">Applied ${esc(f.days)} days ago, no change: time for a follow-up note.</div></li>`).join("");
+  const ap = (b.apply_to || []).map(k => `<li class="kit-item" data-kit-open="${esc(k.url)}"><b>${esc(k.title)}</b> at ${esc(k.company)}
+      <div class="meta">${esc(k.reason)}</div></li>`).join("");
+  $("brief").innerHTML = `<div class="brief-head">${esc(b.headline || "Nothing yet.")}</div>
+    ${ap ? `<div class="section-label" style="margin-top:6px">Apply to (kits ready)</div><ul class="alist">${ap}</ul>` : ""}
+    ${fu ? `<div class="section-label" style="margin-top:12px">Follow-ups due</div><ul class="alist">${fu}</ul>` : ""}`;
+
+  const kits = st.kits || [];
+  if (!kits.some(k => k.url === agentUI.sel)) agentUI.sel = kits[0]?.url || "";
+  $("kits-count").textContent = kits.length ? `${kits.length}` : "";
+  $("kits").innerHTML = kits.length ? kits.map((k, i) => `<li class="kit-item${k.url === agentUI.sel ? " sel" : ""}" data-kit-open="${esc(k.url)}">
+      <div class="kit-row"><div><b>${esc(k.title)}</b><span class="badge-agent">Agent</span><div class="meta">${esc(k.company)} · ${esc(k.location)} · score ${esc(k.score ?? "—")}${k.fit != null ? ` · fit ${esc(k.fit)}` : ""}</div></div>
+      ${statusSelect(k.url, `data-kit-status="${i}"`)}</div><div class="meta">${esc(k.reason)}</div></li>`).join("")
+    : '<li class="hint">No kits yet. Run the agent after a Full Search has saved some leads, or add companies to the watchlist.</li>';
+  renderKitDetail();
+
+  const appr = st.approvals || [];
+  $("approvals-count").textContent = appr.length ? `${appr.length} pending` : "";
+  $("approvals").innerHTML = appr.length ? appr.map(a => `<li><b>Watch ${esc(a.payload?.company || a.key)}</b>
+      <div class="meta">${esc(a.reason)}${a.payload?.ats ? ` · ${esc(a.payload.ats)} board` : ""}</div>
+      <div class="actions"><button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="accept">Accept</button>
+      <button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="reject">Reject</button></div></li>`).join("")
+    : '<li class="hint">Nothing to approve. The agent proposes companies to watch based on your thumbs-ups, applications and strong sponsors.</li>';
+
+  $("watchlist").innerHTML = (st.watchlist || []).map(w => `<span class="chip"><b>${esc(w.company)}</b>${w.ats ? ` · ${esc(w.ats)}` : ""}
+      <button type="button" data-unwatch="${esc(w.company)}" aria-label="Remove ${esc(w.company)}">×</button></span>`).join("") || '<span class="hint">No companies yet.</span>';
+
+  $("activity").innerHTML = (st.activity || []).map(a => `<li><span class="act-kind">${esc(a.kind)}</span>${esc(a.message)}
+      <div class="meta">${esc(fmtWhen(a.ts))}</div></li>`).join("") || '<li class="hint">No activity yet.</li>';
+}
+
+function renderKitDetail() {
+  const k = (agentUI.state?.kits || []).find(x => x.url === agentUI.sel);
+  if (!k) { $("kit-detail").innerHTML = ""; return; }
+  const url = safeUrl(k.url), contact = safeUrl(k.contact_link || ""), fb = agentUI.fb[k.url] || "";
+  $("kit-detail").innerHTML = `<h4>${esc(k.title)} · ${esc(k.company)}</h4>
+    <div class="actions">${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open posting →</a>` : ""}
+      ${contact ? `<a class="btn-sm" href="${esc(contact)}" target="_blank" rel="noopener noreferrer">🔗 Find contact (LinkedIn)</a>` : ""}
+      <button type="button" class="fb-btn up" data-kit-fb="up" aria-pressed="${fb === "up"}" aria-label="Good fit">👍</button>
+      <button type="button" class="fb-btn down" data-kit-fb="down" aria-pressed="${fb === "down"}" aria-label="Not for me">👎</button>
+      <span class="hint">${k.kit_source === "llm" ? "Written with your LLM key, fact-checked against your resume" : "Template kit"} · picked by ${k.picked_by === "llm" ? "LLM" : "ranking"}</span></div>
+    ${(k.flags || []).length ? `<div class="flag-box"><b>Unverified content removed:</b> ${esc(k.flags.join("; "))}</div>` : ""}
+    <h4>Resume bullets</h4><ul>${(k.bullets || []).map(b => `<li>${esc(b)}</li>`).join("")}</ul>
+    <h4>Cover note <button type="button" class="btn-sm" data-copy-kit="cover">Copy</button></h4>
+    <textarea class="outreach-draft" rows="6" readonly>${esc(k.cover_note)}</textarea>
+    <h4>Screening answers</h4>${(k.screening || []).map((q, i) => `<div class="qa"><b>${esc(q.q)}</b>${esc(q.a)}
+      <button type="button" class="btn-sm" data-copy-kit="qa" data-qa="${i}" style="margin-left:6px">Copy</button></div>`).join("")}
+    <p class="hint" style="margin-top:8px">Posted ${esc(k.posted_at || k.posted || "?")} · surfaced ${esc(fmtWhen(k.surfaced_at))}. Review everything before you use it.</p>`;
+}
+
+async function setStatus(url, status, title, company) {
+  try {
+    const r = await postJSON("/agentmode/status", { url: String(url).slice(0, 2000), status,
+      title: String(title || "").slice(0, 200), company: String(company || "").slice(0, 200) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+    if (agentUI.state) { agentUI.state.statuses = agentUI.state.statuses || {}; if (status === "New") delete agentUI.state.statuses[url]; else agentUI.state.statuses[url] = status; }
+    toast(`Marked ${status}.`);
+    loadAgentState();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function saveAgentSettings(body, msg) {
+  try {
+    const r = await postJSON("/agentmode/settings", body), d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    if (msg) toast(msg);
+    loadAgentState();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function runAgentNow() {
+  $("duty-run").disabled = true;
+  try {
+    const r = await postJSON("/agentmode/run", {}), d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    toast("Agent is running. Results appear here when it finishes.");
+    const t0 = Date.now();
+    agentUI.polling = true;
+    while (Date.now() - t0 < 6 * 60 * 1000) {
+      await new Promise(res => setTimeout(res, 3000));
+      await loadAgentState();
+      if (!agentUI.state?.running) break;
+    }
+    toast("Agent run finished.");
+  } catch (e) { toast(e.message, true); }
+  finally { agentUI.polling = false; $("duty-run").disabled = false; }
+}
+
+$("tab-agent").addEventListener("click", async e => {
+  const open = e.target.closest("[data-kit-open]");
+  if (open && !e.target.closest("select")) { agentUI.sel = open.dataset.kitOpen; renderAgent(); return; }
+  const appr = e.target.closest("[data-approve]");
+  if (appr) {
+    try {
+      const r = await postJSON(`/agentmode/approvals/${encodeURIComponent(appr.dataset.approve)}`, { decision: appr.dataset.decision });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      toast(appr.dataset.decision === "accept" ? "Added to your watchlist." : "Rejected. It won't be proposed again.");
+      loadAgentState();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const un = e.target.closest("[data-unwatch]");
+  if (un) {
+    try { await api(`/agentmode/watchlist/${encodeURIComponent(un.dataset.unwatch)}`, { method: "DELETE" }); loadAgentState(); }
+    catch (err) { toast(err.message, true); }
+    return;
+  }
+  const k = (agentUI.state?.kits || []).find(x => x.url === agentUI.sel);
+  const copy = e.target.closest("[data-copy-kit]");
+  if (copy && k) return copyText(copy.dataset.copyKit === "cover" ? k.cover_note : (k.screening?.[+copy.dataset.qa]?.a || ""));
+  const fbb = e.target.closest("[data-kit-fb]");
+  if (fbb && k) {
+    const sig = agentUI.fb[k.url] === fbb.dataset.kitFb ? "" : fbb.dataset.kitFb;
+    agentUI.fb[k.url] = sig; renderKitDetail();
+    try { await postJSON("/feedback", { url: String(k.url).slice(0, 2000), title: String(k.title || "").slice(0, 200), company: String(k.company || "").slice(0, 200), signal: sig }); }
+    catch (err) { toast(err.message, true); }
+  }
+});
+$("tab-agent").addEventListener("change", e => {
+  const sel = e.target.closest("[data-kit-status]");
+  if (sel) { const k = agentUI.state?.kits?.[+sel.dataset.kitStatus]; if (k) setStatus(k.url, sel.value, k.title, k.company); }
+});
+$("results").addEventListener("change", e => {
+  const sel = e.target.closest("[data-status-idx]");
+  if (sel) { const j = view.jobs[+sel.dataset.statusIdx]; if (j) setStatus(j.url, sel.value, j.title, j.company); }
+});
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => showTab(t.dataset.tab)));
+$("duty-toggle").addEventListener("click", () => {
+  const on = $("duty-toggle").getAttribute("aria-pressed") !== "true";
+  saveAgentSettings({ enabled: on, interval_hours: +$("duty-interval").value }, on ? "Agent is on duty." : "Agent is off duty.");
+});
+$("duty-interval").addEventListener("change", () => saveAgentSettings({ interval_hours: +$("duty-interval").value }, "Schedule updated."));
+$("duty-run").addEventListener("click", runAgentNow);
+$("agent-save").addEventListener("click", () => {
+  const body = { notes: $("agent-notes").value.slice(0, 2000) };
+  if (resumeText) body.resume_text = resumeText.slice(0, 20000);
+  saveAgentSettings(body, resumeText ? "Preferences and resume saved." : "Preferences saved.");
+});
+$("watch-add-btn").addEventListener("click", async () => {
+  const company = $("watch-add").value.trim().slice(0, 100);
+  if (!company) return;
+  try {
+    const r = await postJSON("/agentmode/watchlist", { company });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    $("watch-add").value = ""; loadAgentState();
+  } catch (e) { toast(e.message, true); }
 });
 
 // ── wiring ──

@@ -423,14 +423,19 @@ assert c.get("/leads").status_code == 401                                # no se
 assert c.get("/leads", headers={"X-Session-Token": "garbage.notasig"}).status_code == 401  # bad session token
 print("AUTH: correct/incorrect passcode, session token issue/verify/tamper OK")
 
-# ── admin: list/add/remove testers (owner-only endpoints; gated by API_TOKEN like everything else,
-# tested separately below -- here just the list/remove behavior itself with API_TOKEN unset) ──
+# ── admin: list/add/remove testers (owner-only: separate ADMIN_TOKEN via X-Admin-Token, never API_TOKEN;
+# ADMIN_TOKEN unset -> /admin/* disabled entirely) ──
 store.create_user("tmp-remove-me", "throwaway-pass-1")
 ids_before = {u["user_id"] for u in store.list_users()}
 assert {"api", "api7", "bg", "flt", "tmp-remove-me"} <= ids_before
-lr2 = c.get("/admin/users")
+assert c.get("/admin/users").status_code == 403                                  # ADMIN_TOKEN unset: disabled
+main.ADMIN_TOKEN = "adm1n-token"
+ADM = {"X-Admin-Token": "adm1n-token"}
+assert c.get("/admin/users").status_code == 401 and c.get("/admin/users", headers={"X-Admin-Token": "nope"}).status_code == 401
+assert c.get("/admin/users", headers=AUTH).status_code == 401                    # a session token is not admin
+lr2 = c.get("/admin/users", headers=ADM)
 assert lr2.status_code == 200 and "tmp-remove-me" in {u["user_id"] for u in lr2.json()["users"]}
-assert c.delete("/admin/users/no-such-user-xyz").status_code == 404
+assert c.delete("/admin/users/no-such-user-xyz", headers=ADM).status_code == 404
 assert store.delete_user("tmp-remove-me") is True                        # removes user + their leads/seen/profile
 assert store.delete_user("tmp-remove-me") is False                       # already gone
 assert "tmp-remove-me" not in {u["user_id"] for u in store.list_users()}
@@ -507,8 +512,9 @@ assert c.get("/leads", headers=AUTH).status_code == 401                         
 assert c.get("/leads", headers={**AUTH, "Authorization": "Bearer wrong"}).status_code == 401
 assert c.post("/export/sheets", json={}).status_code == 401
 assert c.get("/leads", headers={**AUTH, "Authorization": "Bearer s3cret-token"}).status_code == 200
-assert c.get("/admin/users").status_code == 401                                           # admin endpoints need it too
-assert c.get("/admin/users", headers={"Authorization": "Bearer s3cret-token"}).status_code == 200
+assert c.get("/admin/users", headers=ADM).status_code == 401                              # admin needs the bearer too
+assert c.get("/admin/users", headers={"Authorization": "Bearer s3cret-token"}).status_code == 401  # API_TOKEN alone is NOT admin
+assert c.get("/admin/users", headers={**ADM, "Authorization": "Bearer s3cret-token"}).status_code == 200
 assert c.options("/leads", headers={"Origin": "http://localhost", "Access-Control-Request-Method": "GET"}).status_code == 200
 # CORS preflight must allow the actual custom headers the frontend sends (X-Session-Token on every
 # authenticated call) -- a preflight that omits one silently breaks every such call in a real browser

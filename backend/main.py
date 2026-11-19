@@ -28,6 +28,7 @@ from free_sources     import fetch_jobspy, fetch_ats
 from rules_service    import load_rules, apply_gate, apply_filters, profile_filters, sync_company_signals_from_repo
 from agent_service    import AgentRun
 from fastapi          import Response
+import agent_mode
 import auth
 import data_repo
 import outreach
@@ -41,7 +42,11 @@ app = FastAPI(title="JobFinder", version="4.0", docs_url=None if os.getenv("API_
 # API_TOKEN unset -> open (local dev only). A public deployment MUST set it: otherwise anyone can
 # start long scraping runs, read saved leads, or append rows to your Sheet with the server's credentials.
 API_TOKEN = os.getenv("API_TOKEN", "")
+# ADMIN_TOKEN: separate owner-only secret for /admin/* (header X-Admin-Token). Testers may be given
+# API_TOKEN to reach the app, so it must not double as the admin password. Unset -> /admin/* disabled.
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 PUBLIC_PATHS = {"/", "/health"}
+SECURITY_HEADERS = {"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store"}
 if not API_TOKEN:
     log.warning("API_TOKEN not set: API is unauthenticated (fine for localhost, unsafe when deployed)")
 
@@ -50,7 +55,7 @@ app.add_middleware(
     allow_origins=[o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()],
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept", "Authorization", "X-Session-Token"],
+    allow_headers=["Content-Type", "Accept", "Authorization", "X-Session-Token", "X-Admin-Token"],
 )
 
 
@@ -73,11 +78,15 @@ async def auth_and_headers(request: Request, call_next):
     if API_TOKEN and request.method != "OPTIONS" and request.url.path not in PUBLIC_PATHS:
         sent = request.headers.get("authorization", "")
         if not hmac.compare_digest(sent.encode(), f"Bearer {API_TOKEN}".encode()):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return JSONResponse({"error": "unauthorized"}, status_code=401, headers=SECURITY_HEADERS)
+    if request.url.path.startswith("/admin") and request.method != "OPTIONS":
+        sent_admin = request.headers.get("x-admin-token", "")
+        if not ADMIN_TOKEN:
+            return JSONResponse({"error": "admin disabled: set ADMIN_TOKEN"}, status_code=403, headers=SECURITY_HEADERS)
+        if not hmac.compare_digest(sent_admin.encode(), ADMIN_TOKEN.encode()):
+            return JSONResponse({"error": "unauthorized"}, status_code=401, headers=SECURITY_HEADERS)
     resp = await call_next(request)
-    resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["Referrer-Policy"] = "no-referrer"
-    resp.headers["Cache-Control"] = "no-store"
+    resp.headers.update(SECURITY_HEADERS)
     return resp
 
 
@@ -88,7 +97,7 @@ async def auth_and_headers(request: Request, call_next):
 # "Multi-user" section: trusting a client-supplied user_id let anyone read/write any other user's data.
 def current_user(x_session_token: str = Header(default="", alias="X-Session-Token")) -> str:
     user_id = auth.verify_session_token(x_session_token)
-    if not user_id:
+    if not user_id or not store.user_exists(user_id):  # a removed user's unexpired token stops working
         raise HTTPException(status_code=401, detail="missing or invalid session token; call /auth/login first")
     return user_id
 
@@ -97,7 +106,8 @@ def optional_user(x_session_token: str = Header(default="", alias="X-Session-Tok
     """Like current_user(), but "" instead of a 401 when there's no valid session -- for /feedback,
     which the legacy unauthenticated /search pipeline's global feedback_store also still uses (see
     CLAUDE.md roadmap item 1: that global dict is kept for /search; per-user persistence is additive)."""
-    return auth.verify_session_token(x_session_token) or ""
+    user_id = auth.verify_session_token(x_session_token)
+    return user_id if user_id and store.user_exists(user_id) else ""
 
 
 MAX_RESUME_BYTES = 5 * 1024 * 1024
@@ -140,7 +150,7 @@ def Short():
 
 
 def UserId():
-    return Field(default="default", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.@-]+$")
+    return Field(default="default", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_@-]+(\.[A-Za-z0-9_@-]+)*$")
 
 
 class LoginParams(BaseModel):
@@ -298,25 +308,37 @@ def root():
     return {"service": "JobFinder", "version": "4.0", "status": "running", "auth": bool(API_TOKEN)}
 
 
+LOGIN_MAX_FAILURES, LOGIN_WINDOW_S = 5, 900   # per user_id: 5 wrong passcodes -> locked 15 min
+_login_failures: dict[str, list[float]] = {}
+
+
 @app.post("/auth/login")
 def login(p: LoginParams):
     """Verifies a passcode the owner created with backend/add_user.py and issues a signed session
     token (header X-Session-Token on every later request). No self-serve signup endpoint exists."""
+    now = time.time()
+    fails = [t for t in _login_failures.get(p.user_id, []) if now - t < LOGIN_WINDOW_S]
+    if len(fails) >= LOGIN_MAX_FAILURES:
+        return JSONResponse({"error": "too many attempts; try again later"}, status_code=429)
     if not store.verify_user(p.user_id, p.passcode):
+        _login_failures[p.user_id] = fails + [now]
+        if len(_login_failures) > 10_000:
+            _login_failures.pop(next(iter(_login_failures)))  # bounded
         return JSONResponse({"error": "invalid user_id or passcode"}, status_code=401)
+    _login_failures.pop(p.user_id, None)
     token = auth.make_session_token(p.user_id)
     return {"token": token, "user_id": p.user_id, "expires_days": auth.SESSION_DAYS}
 
 
 @app.post("/admin/add-user")
 def admin_add_user(p: AddUserParams):
-    """Creates a tester or rotates their passcode. Owner-only: this endpoint is protected by the same
-    API_TOKEN bearer check as everything else (see PUBLIC_PATHS above) -- a new tester never has
-    API_TOKEN, so this can't be used for self-serve signup, matching backend/add_user.py's own intent.
+    """Creates a tester or rotates their passcode. Owner-only: this endpoint is protected by the separate
+    ADMIN_TOKEN (header X-Admin-Token, see SECURITY above), never by API_TOKEN -- testers may hold
+    API_TOKEN, so it can't be the admin password, and this can't be used for self-serve signup, matching backend/add_user.py's own intent.
     Exists because Render's free plan has no Shell access to run that CLI script directly on the
     deployed instance; call this instead, e.g.:
       curl -X POST https://<your-render-url>/admin/add-user \\
-        -H "Authorization: Bearer <API_TOKEN>" -H "Content-Type: application/json" \\
+        -H "Authorization: Bearer <API_TOKEN>" -H "X-Admin-Token: <ADMIN_TOKEN>" -H "Content-Type: application/json" \\
         -d '{"user_id": "...", "passcode": "..."}'
     """
     existed = store.user_exists(p.user_id)
@@ -332,7 +354,7 @@ def admin_list_users():
 
 
 @app.delete("/admin/users/{user_id}")
-def admin_remove_user(user_id: Annotated[str, Path(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.@-]+$")]):
+def admin_remove_user(user_id: Annotated[str, Path(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_@-]+(\.[A-Za-z0-9_@-]+)*$")]):
     """Removes a tester's account and all their data (leads, seen, profile), locally and in the private
     data repo when configured. Same owner-only API_TOKEN gate as the rest of /admin/*."""
     existed = store.delete_user(user_id)
@@ -522,13 +544,14 @@ def feedback(payload: FeedbackPayload, user_id: str = Depends(optional_user)):
     fit_service.score_lead via AgentRun.feedback_signals -- roadmap item 1: feedback that actually
     changes future Full Search scoring, not just the legacy pipeline.
     """
-    if payload.signal:
-        if payload.url not in feedback_store and len(feedback_store) >= 5000:
-            feedback_store.pop(next(iter(feedback_store)))  # bounded: oldest entry out
-        feedback_store[payload.url] = payload.signal
+    if not user_id:  # anonymous legacy /search caller only: a signed-in user's thumbs never leak into others' ranking
+        if payload.signal:
+            if payload.url not in feedback_store and len(feedback_store) >= 5000:
+                feedback_store.pop(next(iter(feedback_store)))  # bounded: oldest entry out
+            feedback_store[payload.url] = payload.signal
+        else:
+            feedback_store.pop(payload.url, None)
     else:
-        feedback_store.pop(payload.url, None)
-    if user_id:
         store.save_feedback(user_id, payload.url, payload.company, payload.title, payload.signal)
     return {"stored": True, "url": payload.url, "signal": payload.signal}
 
@@ -546,6 +569,137 @@ def outreach_draft(p: OutreachParams, user_id: str = Depends(current_user)):
     except Exception:
         log.exception("outreach draft failed")
         return JSONResponse({"error": "could not draft outreach (see server log)"}, status_code=500)
+
+
+# ── AGENT MODE (Agent v1, the "Agent" tab; see agent_mode.py) ─────────────────────────────────────
+# Separate from /agent/* (= the Full Search pipeline, deliberately not renamed). Every route takes
+# user_id from the verified session (current_user), never from the client; approval ids and URLs are
+# looked up WHERE user_id = <session user>, so another user's ids behave exactly like missing ones.
+_agentmode_running: set[str] = set()
+_agentmode_lock = threading.Lock()
+
+
+class AgentModeSettings(BaseModel):
+    enabled:        bool | None = None
+    interval_hours: Literal[6, 12, 24, 48, 72, 168] | None = None
+    notes:          str | None = Field(default=None, max_length=2000)   # plain-sentence preferences for the LLM
+    resume_text:    str | None = Field(default=None, max_length=20000)
+
+
+class AgentModeRun(BaseModel):
+    wait: bool = False   # True = run synchronously (tests/CLI); the UI runs in the background and polls /state
+
+
+class LeadStatusParams(BaseModel):
+    url:     str = Field(min_length=1, max_length=2000)
+    status:  Literal["New", "Applied", "Interview", "Rejected", "Skipped"]
+    title:   str = Short()
+    company: str = Short()
+
+
+class ApprovalDecision(BaseModel):
+    decision: Literal["accept", "reject"]
+
+
+class WatchlistAdd(BaseModel):
+    company: str = Field(min_length=1, max_length=100)
+    ats:     Literal["", "greenhouse", "lever", "ashby"] = ""
+    slug:    str = Field(default="", max_length=60, pattern=r"^[A-Za-z0-9_.-]*$")
+
+
+@app.get("/agentmode/state")
+def agentmode_state(user_id: str = Depends(current_user)):
+    """Everything the Agent tab shows: on-duty settings, Today brief, kits, activity, approvals, watchlist,
+    per-lead statuses and the set of agent-surfaced URLs (for the "Agent" badge in both tabs)."""
+    if user_id not in _agentmode_running:
+        agent_mode.sync_from_repo(user_id)   # no-op unless the private data repo is configured
+    st = agent_mode.public_state(user_id)
+    st["running"] = user_id in _agentmode_running
+    return st
+
+
+@app.post("/agentmode/settings")
+def agentmode_settings(p: AgentModeSettings, user_id: str = Depends(current_user)):
+    fields = {k: v for k, v in p.model_dump().items() if v is not None}
+    cur = store.get_agent_settings(user_id)
+    if fields.get("enabled") and not cur["enabled"]:
+        fields["next_run"] = ""   # due immediately once switched on
+    if fields.get("enabled") is False:
+        fields["next_run"] = ""
+    # the scheduled workflow has no access to Render's profile table: snapshot the resolved profile now
+    snap = load_rules(user_id=user_id)
+    snap.pop("researched", None)
+    fields["rules_snapshot"] = json.dumps(snap)
+    store.save_agent_settings(user_id, **fields)
+    agent_mode.sync_to_repo(user_id)
+    return agent_mode.public_state(user_id)["settings"]
+
+
+@app.post("/agentmode/run")
+def agentmode_run(p: AgentModeRun, user_id: str = Depends(current_user)):
+    """Run one agent cycle now (drafts only; never applies or sends anything)."""
+    with _agentmode_lock:
+        if user_id in _agentmode_running:
+            return JSONResponse({"error": "an agent cycle is already running"}, status_code=429)
+        _agentmode_running.add(user_id)
+
+    def work():
+        try:
+            res = agent_mode.run_cycle(user_id)
+            agent_mode.sync_to_repo(user_id)
+            return res
+        finally:
+            _agentmode_running.discard(user_id)
+
+    if p.wait:
+        try:
+            res = work()
+            return {"status": "done", "cycle_id": res["cycle_id"], "kits": len(res["picks"]), "decided_by": res["decided_by"]}
+        except Exception:
+            log.exception("agent cycle failed")
+            return JSONResponse({"error": "agent cycle failed (see server log)"}, status_code=500)
+
+    def bg():
+        try:
+            work()
+        except Exception:
+            log.exception("agent cycle failed")
+    threading.Thread(target=bg, daemon=True).start()
+    return {"status": "running"}
+
+
+@app.post("/agentmode/status")
+def agentmode_status(p: LeadStatusParams, user_id: str = Depends(current_user)):
+    """Per-lead status (New/Applied/Interview/Rejected/Skipped), shared by both tabs. Feeds the same memory as
+    thumbs (store.feedback_signal_counts): Applied/Interview count as up, Skipped as down."""
+    res = store.set_lead_status(user_id, p.url, p.status, p.company, p.title)
+    agent_mode.sync_to_repo(user_id)
+    return res
+
+
+@app.post("/agentmode/approvals/{approval_id}")
+def agentmode_decide(approval_id: Annotated[int, Path(ge=1)], p: ApprovalDecision, user_id: str = Depends(current_user)):
+    res = store.decide_approval(user_id, approval_id, p.decision == "accept")
+    if not res:
+        return JSONResponse({"error": "no such pending approval"}, status_code=404)
+    store.add_activity(user_id, "", "approval", f"You {res['status']} adding {res['payload'].get('company', '?')} to the watchlist.")
+    agent_mode.sync_to_repo(user_id)
+    return res
+
+
+@app.post("/agentmode/watchlist")
+def agentmode_watch_add(p: WatchlistAdd, user_id: str = Depends(current_user)):
+    store.add_watchlist(user_id, p.company, p.ats, p.slug, "manual")
+    agent_mode.sync_to_repo(user_id)
+    return {"watchlist": store.list_watchlist(user_id)}
+
+
+@app.delete("/agentmode/watchlist/{company}")
+def agentmode_watch_remove(company: Annotated[str, Path(min_length=1, max_length=100)], user_id: str = Depends(current_user)):
+    if not store.remove_watchlist(user_id, company):
+        return JSONResponse({"error": "not on your watchlist"}, status_code=404)
+    agent_mode.sync_to_repo(user_id)
+    return {"watchlist": store.list_watchlist(user_id)}
 
 
 @app.post("/parse-resume")
