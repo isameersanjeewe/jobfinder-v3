@@ -107,6 +107,46 @@ the data repo first (`_agentmode_load`), so a write can't sync an empty state ov
   They use a generic User-Agent, with no cookies, logins, emails or names. Don't run `smoke_test.py`/`run_live_test.sh`
   from home if IP reputation matters.
 
+## 2026-11-19 evening: skip picks + skip rules (not yet deployed)
+- Each pick has Skip (×), Too senior, and Hide <company>. Skipping marks the lead Skipped (a down signal), removes the kit
+  and returns the next best saved lead as a new kit (`POST /agentmode/kits/skip`, `agent_mode.skip_kit` / `refill`;
+  one LLM kit pass when configured + resume saved, otherwise a template that the next cycle upgrades).
+- Agent settings → Skip rules: a max-years limit (read from "N+ years of experience" in the JD; postings that don't say
+  are kept) and hidden companies (+ one-click "Hide big tech"). Stored in the Agent filters as `max_years` /
+  `exclude_companies`; saving targets or "Use profile" keeps them. Tightening a rule prunes and refills kits.
+- Hiding a company also removes it from the watchlist and dismisses its pending suggestions; Suggestions have a ⊘ Hide
+  button (`POST /agentmode/hide-company`). Hidden companies are never proposed again.
+- Not covered: the Search tab's own exclude list is separate; the years limit applies to Agent picks only.
+
+## 2026-11-19 evening: Agent screen design pass (not yet deployed)
+- **"On what basis is the fit?"** Two numbers, now labelled and explained:
+  - **Match** (0-100, the rule-based lead score in `fit_service.score_lead`) has points for H-1B sponsor, title,
+    location, industry and contact, plus thumbs. Click a score (Search) or open "Why this pick" (kit) to see the
+    breakdown. The maxima come from the user's own profile (`/agentmode/state` -> `scoring`).
+  - **Resume fit** is the % of the job's key skills found in the resume (✦ = AI read), with the matched and missing skills.
+  Kits now store `score_parts`, `matched`, `missing` and `fit_source`.
+- **Sort:** Search has a sort menu (Best match, Resume fit, Newest, Strongest H-1B sponsor, Company A-Z), remembered per browser.
+- **Speed:** every Agent click used to wait on two GitHub round-trips (push, then a full state reload). Now:
+  - The UI updates instantly and rolls back with a message if the save fails.
+  - The server writes SQLite and pushes to the data repo in a background thread (`_agentmode_sync_later`).
+  - Rules for the push:
+    - Pushes are coalesced.
+    - Failed pushes are retried 3x and then on the next `/state`.
+    - `/state` never pulls over an unpushed write.
+    - A per-user lock keeps a pull and a write from interleaving (`agent_writer` dependency).
+    - Shutdown waits up to 25 s for queued pushes.
+- **Less clutter:** the Agent tab shows the duty bar, Today's picks and the kit. Suggestions appear only when there
+  are some. Targets, watchlist, resume/notes and schedule sit in one collapsible "Agent settings" panel, which opens
+  automatically when targets or a resume are missing. Activity is collapsed. Screening answers are collapsed in the kit.
+- **Loaders/motion:**
+  - skeleton rows while loading, plus a "waking the server" note after 4 s
+  - Run now shows "Running…", a progress bar and a pulsing dot
+  - spinners on Save buttons
+  - 120-160 ms fades on add/remove
+  - all motion is off under reduced-motion
+- Known limit (code review): agent.json is still whole-file last-writer-wins. A click pushed while a scheduled run
+  commits can drop that run's kits. Fix later with sha-checked PUTs (409 -> pull, merge, retry).
+
 ## Known issues / open items
 1. **Watchlist suggestions** name companies whose boards the watchlist can't read (Amazon, Google, Bloomberg: not on
    Greenhouse/Lever/Ashby). Only suggest companies with a readable board (`agent_mode.board_from_url`), or add Workday

@@ -144,4 +144,118 @@ import free_sources
 assert free_sources.JOBSPY_SITES == ["indeed", "linkedin"], free_sources.JOBSPY_SITES
 print("PROFILES: owner profile never leaks to other users; starter = anywhere; JobSpy sites trimmed OK")
 
+# ── 5. clicks don't wait on GitHub: writes push in the background, and /state never pulls over an unpushed write ──
+import threading, time as _time, data_repo
+gate, pulls, pushes, push_ok = threading.Event(), [], [], [True]
+orig = (data_repo.enabled, data_repo.write_json, agent_mode.sync_from_repo)
+main._PUSH_BACKOFF = 0
+data_repo.enabled = lambda: True
+data_repo.write_json = lambda path, data, msg: (gate.wait(5), pushes.append(path), push_ok[0])[2]
+agent_mode.sync_from_repo = lambda u: pulls.append(u)
+def settle():
+    for _ in range(100):
+        if "tgt-a" not in main._sync_pending: return
+        _time.sleep(0.05)
+t0 = _time.time()
+assert c.post("/agentmode/watchlist", json={"company": "Wayne Labs 2"}, headers=A).status_code == 200
+assert c.post("/agentmode/watchlist", json={"company": "Wayne Labs 3"}, headers=A).status_code == 200
+assert _time.time() - t0 < 2, "the response must not wait for the data-repo push"
+c.get("/agentmode/state", headers=A)
+assert "tgt-a" not in pulls, "a pending push must not be overwritten by the older repo copy"
+gate.set(); settle()
+assert len(pushes) == 2, pushes   # the second write is coalesced into one more push
+st = c.get("/agentmode/state", headers=A).json()
+assert "tgt-a" in pulls, "once pushed, /state pulls scheduled-run kits again"
+assert st["scoring"]["max"]["h1b"] == max(EX["scoring"]["h1b_points"].values()) and st["scoring"]["hot"] == EX["scoring"]["hot_threshold"]
+# a push that keeps failing (write_json returns False, it doesn't raise) must block pulls and be retried
+push_ok[0] = False; pulls.clear(); pushes.clear()
+c.post("/agentmode/watchlist", json={"company": "Wayne Labs 4"}, headers=A); settle()
+assert "tgt-a" in main._sync_failed and len(pushes) == 3, (main._sync_failed, pushes)   # 3 attempts
+c.get("/agentmode/state", headers=A)
+assert "tgt-a" not in pulls, "never pull over a write that didn't reach the repo"
+settle(); push_ok[0] = True
+c.get("/agentmode/state", headers=A); settle()
+assert "tgt-a" not in main._sync_failed, "/state retried the push and it went through"
+assert any(w["company"].lower() == "wayne labs 4" for w in store.list_watchlist("tgt-a")), store.list_watchlist("tgt-a")
+data_repo.enabled, data_repo.write_json, agent_mode.sync_from_repo = orig
+kits = [k for k in store.list_kits("owner", 30) if k.get("score_parts")]
+assert kits and set(kits[0]["score_parts"]) >= {"h1b", "title", "geo", "industry", "contact"}, "kits explain their Match score"
+assert all(isinstance(k.get("matched"), list) for k in kits)
+print("SYNC: writes return at once, push in the background, no stale pull OK")
+
+# ── 6. skip: "not for me" / "too senior" / hide a company, and the next best pick comes in ──
+assert agent_mode.years_asked("8+ years of product management experience and 3 years of SQL experience") == 8
+assert agent_mode.years_asked("5-7 years of relevant experience") == 5
+assert agent_mode.years_asked("Founded 20 years ago. 401k after 2 years.") is None, "only years tied to experience count"
+assert agent_mode.years_asked("at least 10 yrs experience") == 10
+def JD(t, co, desc):
+    j = normalize(t, co, "Remote", f"https://y/{co}/{t}".replace(" ", "_"), today, "ATS/Greenhouse", desc)
+    j["is_remote"] = True
+    return j
+pool = [JD("Product Manager", "Acme Health", "roadmap sql agile; 4+ years of experience"),
+        JD("Product Owner", "Globex", "roadmap sql agile; 12+ years of product experience"),
+        JD("Technical Product Manager", "Initech", "roadmap agile sql"),
+        JD("Data Product Manager", "Acme Health", "roadmap sql agile"),
+        JD("Platform Product Owner", "Globex", "roadmap sql; 3 years experience"),
+        JD("Growth Product Manager", "Initech", "roadmap sql agile")]
+store.save_leads(pool, "ft", "tgt-b")
+store.add_watchlist("tgt-b", "Acme Health", "", "acmehealth", "manual")
+store.propose_approval("tgt-b", "watchlist_add", "acme health inc", {"company": "Acme Health Inc"}, "strong sponsor")
+agent_mode.run_cycle("tgt-b", NOW)
+U = {j["company"] + "/" + j["title"]: j["url"] for j in pool}
+kits0 = store.kit_urls("tgt-b")
+assert len(kits0) >= 3, kits0
+
+# a years limit drops kits that ask for more and refills; saving targets or "use profile" keeps the skip rules
+r = c.post("/agentmode/settings", json={"filters": {"max_years": 8}}, headers=B).json()
+assert r["filters"] == {"max_years": 8}, r
+assert U["Globex/Product Owner"] not in store.kit_urls("tgt-b")
+assert r["pruned"] == (1 if U["Globex/Product Owner"] in kits0 else 0)
+assert json.loads(store.get_agent_settings("tgt-b")["rules_snapshot"])["profile"]["max_years"] == 8, "scheduled runs get the limit"
+assert not agent_mode._targets_set(store.get_agent_settings("tgt-b")), "skip rules alone are not custom targets"
+r = c.post("/agentmode/settings", json={"filters": {"titles": ["Product Manager", "Product Owner"], "locations": [], "remote_ok": True}}, headers=B).json()
+assert r["filters"]["max_years"] == 8 and r["filters"]["titles"], r
+r = c.post("/agentmode/settings", json={"clear_filters": True}, headers=B).json()
+assert r["filters"] == {"max_years": 8}, r
+
+# skip one pick: Skipped status (a down signal), kit gone, the next best saved lead gets a kit
+victim = U["Globex/Platform Product Owner"]
+assert victim in store.kit_urls("tgt-b")
+before = store.kit_urls("tgt-b")
+d = c.post("/agentmode/kits/skip", json={"url": victim, "reason": "too_senior"}, headers=B).json()
+assert d["removed"] == [victim] and victim not in store.kit_urls("tgt-b"), d
+assert store.lead_statuses("tgt-b")[victim]["status"] == "Skipped"
+left = {j["url"] for j in pool} - before - {U["Globex/Product Owner"]}
+assert [k["url"] for k in d["added"]] and d["added"][0]["url"] in left, (d["added"], left)
+assert "years_asked" in d["added"][0]
+assert c.post("/agentmode/kits/skip", json={"url": victim}, headers=B).status_code == 404, "already skipped"
+assert c.post("/agentmode/kits/skip", json={"url": next(iter(store.kit_urls("tgt-b")))}, headers=A).status_code == 404, "another user's kit"
+
+# hide a company from one of its picks: every unacted kit from it goes, it leaves the watchlist, its suggestions are dismissed
+acme = next(u for u in store.kit_urls("tgt-b") if "Acme" in u)
+d = c.post("/agentmode/kits/skip", json={"url": acme, "reason": "company"}, headers=B).json()
+assert not any("Acme" in u for u in store.kit_urls("tgt-b")), store.kit_urls("tgt-b")
+assert d["filters"]["exclude_companies"] == ["Acme Health"] and d["filters"]["max_years"] == 8 and d["dismissed"] == 1, d
+assert not any(w["company"] == "acme health" for w in store.list_watchlist("tgt-b"))
+assert not [a for a in store.list_approvals("tgt-b", "pending") if "acme" in a["key"]]
+assert "acme health" in json.loads(store.get_agent_settings("tgt-b")["rules_snapshot"])["companies"]["excluded"]
+res = agent_mode.run_cycle("tgt-b", NOW)
+assert not any("Acme" in u or u == U["Globex/Product Owner"] for u in res["picks"]), res["picks"]
+for j in pool:   # nothing hidden or over the limit comes back, and nothing hidden is suggested for the watchlist
+    if j["company"] == "Acme Health" or j["url"] == U["Globex/Product Owner"]:
+        assert j["url"] not in store.kit_urls("tgt-b")
+n = agent_mode.propose_watchlist("tgt-b", agent_mode.rules_for("tgt-b", store.get_agent_settings("tgt-b")["filters"]),
+                                 [dict(pool[0], company_h1b="Strong", hot_lead=True)], {}, [], lambda *a: None)
+assert n == 0, "a hidden company is never suggested"
+
+# hide by name (Suggestions' button / Agent settings), un-hide, and validation
+assert c.post("/agentmode/hide-company", json={"companies": []}, headers=B).status_code == 422
+d = c.post("/agentmode/hide-company", json={"companies": ["Initech", "Globex"]}, headers=B).json()
+assert set(d["filters"]["exclude_companies"]) == {"Acme Health", "Initech", "Globex"} and "added" in d, d
+assert not store.kit_urls("tgt-b") - {k for k in store.kit_urls("tgt-b") if store.lead_statuses("tgt-b").get(k)}
+r = c.post("/agentmode/settings", json={"filters": {"exclude_companies": ["Globex"], "max_years": 0}}, headers=B).json()
+assert r["filters"] == {"exclude_companies": ["Globex"]}, r
+assert c.post("/agentmode/settings", json={"filters": {"max_years": 31}}, headers=B).status_code == 422
+print("SKIP: skip/too senior/hide company refill the picks; years limit and hidden list persist OK")
+
 print("ALL OK")

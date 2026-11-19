@@ -352,6 +352,8 @@ def apply_filters(rules: dict, f: dict | None) -> dict:
         rules.setdefault("industry_boost", {"terms": [], "penalty_terms": []})["terms"] = terms
     if f.get("exclude_companies"):
         rules["companies"].setdefault("excluded", []).extend(c.strip().lower() for c in f["exclude_companies"] if c.strip())
+    if f.get("max_years"):   # Agent skip rule: leave out postings asking more years of experience than this
+        p["max_years"] = int(f["max_years"])
     return rules
 
 

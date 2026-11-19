@@ -33,7 +33,8 @@ from agent_service import dedupe_key
 from contacts import linkedin_people_url
 from fit_service import keyword_fit, score_lead
 from free_sources import fetch_company_board
-from rules_service import apply_filters, apply_gate, geo_ok, load_rules, remote_trusted, sponsorship_answer, title_ok
+from rules_service import (apply_filters, apply_gate, company_signal, geo_ok, load_rules, remote_trusted, sponsorship_answer,
+                           title_ok)
 
 log = logging.getLogger("jobfinder")
 
@@ -188,10 +189,40 @@ def rules_for(user_id: str, filters_json: str | None) -> dict:
     return apply_filters(rules, f) if isinstance(f, dict) else rules
 
 
+def _targets_set(settings: dict) -> bool:
+    """Titles/places set in the Agent tab (skip rules alone -- hidden companies, max years -- don't count)."""
+    f = _json_or_none(settings.get("filters")) or {}
+    return bool(f.get("titles") or f.get("locations") is not None or f.get("remote_ok") is not None)
+
+
 def _still_eligible(j: dict, rules: dict) -> bool:
     """Saved Full Search leads were gated with whatever rules were current then. Re-check the two gates the
     user can change from the UI (title, location) so a lead outside today's picks never gets a kit."""
     return title_ok(j.get("title", ""), rules) and geo_ok(j.get("location", ""), rules, bool(j.get("is_remote")), remote_trusted(j))
+
+
+# "8+ years of experience", "5-7 years of product management experience", "at least 10 yrs experience".
+# Only a number tied to the word "experience" counts ("founded 20 years ago" doesn't). The largest minimum wins.
+_YEARS_RX = re.compile(r"(\d{1,2})\s*\+?\s*(?:(?:-|–|to)\s*\d{1,2}\s*\+?\s*)?(?:years?|yrs?)\b(?:\s+of)?"
+                       r"(?:\s+[\w/&,.-]+){0,4}?\s+(?:experience|exp)\b", re.I)
+
+
+def years_asked(text: str) -> int | None:
+    found = [int(m.group(1)) for m in _YEARS_RX.finditer(text or "") if 0 < int(m.group(1)) <= 30]
+    return max(found) if found else None
+
+
+def omit_reason(j: dict, rules: dict) -> str:
+    """Why the user's own skip rules (Agent settings: hidden companies, max years asked) leave this lead out, or ""."""
+    if company_signal(j.get("company", ""), rules) == "Excluded":
+        return "company"
+    cap = rules.get("profile", {}).get("max_years")
+    asked = j.get("years_asked")
+    if asked is None and j.get("description"):
+        asked = years_asked(j["description"])
+    if cap and asked and asked > cap:
+        return "years"
+    return ""
 
 
 def _saved_pool(user_id: str, now: datetime) -> list[dict]:
@@ -209,6 +240,7 @@ def _score(j: dict, rules: dict, resume: str, signals: dict) -> dict:
     j.update(score_lead(j, rules, signals))
     j["contact_link"] = linkedin_people_url(j.get("company", ""), j.get("title", ""))
     j["sponsorship_answer"] = sponsorship_answer(rules)
+    j["years_asked"] = years_asked(j.get("description", ""))
     return j
 
 
@@ -360,11 +392,14 @@ def template_kit(j: dict, rules: dict, reason: str, picked_by: str, surfaced_at:
     return {"url": j["url"], "title": j.get("title", ""), "company": j.get("company", ""), "location": j.get("location", ""),
             "posted": j.get("posted", ""), "posted_at": j.get("posted", ""), "surfaced_at": surfaced_at or _utcnow(),
             "score": j.get("score"), "hot_lead": j.get("hot_lead", False), "flags": [],
-            "fit": j.get("fit"), "company_h1b": j.get("company_h1b", ""), "reason": reason, "picked_by": picked_by,
+            "fit": j.get("fit"), "fit_source": j.get("fit_source", ""), "score_parts": j.get("score_parts") or {},
+            "matched": [m for m in (j.get("matched") or []) if isinstance(m, str)][:8],
+            "missing": [m for m in (j.get("missing") or []) if isinstance(m, str)][:8],
+            "company_h1b": j.get("company_h1b", ""), "reason": reason, "picked_by": picked_by,
             "source": j.get("agent_source") or "full_search", "bullets": bullets, "cover_note": cover,
             "kit_source": "template", "screening": qa, "contact_link": j.get("contact_link", ""),
             "is_remote": bool(j.get("is_remote")), "board_source": j.get("source", ""),
-            "sponsorship_answer": ans}
+            "sponsorship_answer": ans, "years_asked": j.get("years_asked")}
 
 
 # Kit text must not invent facts or carry injected asks. Visa/work-authorization wording comes ONLY from
@@ -502,7 +537,7 @@ def propose_watchlist(user_id: str, rules: dict, scored: list[dict], statuses: d
     for company, reason, url in cands:
         company = clean(company, 100)
         key = company.lower()
-        if not key or key in skip:
+        if not key or key in skip or company_signal(company, rules) == "Excluded":
             continue
         skip.add(key)
         ats, slug = board_from_url(url)
@@ -566,7 +601,7 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
     settings = store.get_agent_settings(user_id)
     # re-check saved leads / sweep kits only against targets the user set in the Agent tab: without them, Full Search
     # already gated each lead with that browser's own Search filters, which the server can't see
-    targets_set = bool(_json_or_none(settings.get("filters")))
+    targets_set = _targets_set(settings)
     rules = rules or rules_for(user_id, settings.get("filters"))
     resume = settings["resume_text"] or os.getenv("RESUME_TEXT", "")
     signals = store.feedback_signal_counts(user_id)
@@ -589,6 +624,10 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
         store.delete_kits(user_id, stale)
         kitted -= set(stale)
         act("skip", f"Cleared {len(stale)} apply kit(s) for jobs outside your current titles or locations.")
+    n_pruned = prune_kits(user_id, rules, statuses)
+    if n_pruned:
+        kitted = store.kit_urls(user_id)
+        act("skip", f"Cleared {n_pruned} apply kit(s) that your skip rules now leave out (hidden company or too many years asked).")
 
     # 2. gather
     saved_all = _saved_pool(user_id, now)
@@ -635,7 +674,7 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
             continue
         keys.add(k)
         pool[j["url"]] = j
-    candidates = []
+    candidates, omitted = [], {"company": 0, "years": 0}
     for url, j in pool.items():
         if url in kitted:
             n_kitted += 1
@@ -643,8 +682,14 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
             n_status += 1
         elif url in down:
             downs.append(j)
+        elif why := omit_reason(j, rules):
+            omitted[why] += 1
         else:
             candidates.append(_score(j, rules, resume, signals))
+    if any(omitted.values()):
+        act("skip", "Left out by your skip rules: " + ", ".join(
+            f"{n} {'from hidden companies' if k == 'company' else 'asking more years than your limit'}"
+            for k, n in omitted.items() if n) + ".")
     for j in downs[:3]:
         act("skip", f"Skipped {clean(j.get('title'), 100)} at {clean(j.get('company'), 60)}: you gave it a thumbs-down.", j["url"])
     candidates.sort(key=_rank_key)
@@ -720,6 +765,111 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
     return {"cycle_id": cycle, "picks": [j["url"] for j, _ in picks], "decided_by": by, "proposals": n_prop,
             "llm_calls": budget.calls, "llm_stopped": budget.stopped, "carry_forward": list(dict.fromkeys(carry)), "brief": brief,
             "events": events}
+
+
+# ── skip: the user says "not this one" and the agent brings the next best ─────────────────────────────
+def prune_kits(user_id: str, rules: dict, statuses: dict | None = None) -> int:
+    """Drop kits the user hasn't acted on that their skip rules now leave out. Returns how many."""
+    statuses = store.lead_statuses(user_id) if statuses is None else statuses
+    gone = [k["url"] for k in store.list_kits(user_id, 200) if not statuses.get(k["url"]) and omit_reason(k, rules)]
+    if gone:
+        store.delete_kits(user_id, gone)
+    return len(gone)
+
+
+def hide_company(user_id: str, companies) -> dict:
+    """Add companies to the Agent's hidden list: their kits (not acted on) go, they leave the watchlist, their pending
+    watchlist suggestions are dismissed, and no run picks or suggests them again until the user un-hides them."""
+    names = [c for c in (clean(x, 100) for x in ([companies] if isinstance(companies, str) else companies)) if c]
+    settings = store.get_agent_settings(user_id)
+    f = _json_or_none(settings.get("filters")) or {}
+    hidden = [c for c in (f.get("exclude_companies") or []) if isinstance(c, str)]
+    for c in names:
+        if c.lower() not in {h.lower() for h in hidden}:
+            hidden.append(c)
+    f["exclude_companies"] = hidden[-100:]
+    store.save_agent_settings(user_id, filters=json.dumps(f))
+    rules = rules_for(user_id, json.dumps(f))
+    statuses = store.lead_statuses(user_id)
+    gone = [k["url"] for k in store.list_kits(user_id, 200)
+            if not statuses.get(k["url"]) and company_signal(k.get("company", ""), rules) == "Excluded"]
+    store.delete_kits(user_id, gone)
+    for w in store.list_watchlist(user_id):
+        if company_signal(w["company"], rules) == "Excluded":
+            store.remove_watchlist(user_id, w["company"])
+    dismissed = 0
+    for a in store.list_approvals(user_id, "pending"):
+        if a["kind"] == "watchlist_add" and company_signal(a["payload"].get("company") or a["key"], rules) == "Excluded":
+            dismissed += bool(store.decide_approval(user_id, a["id"], False))
+    store.add_activity(user_id, "", "skip", f"You hid {', '.join(names)}: {len(gone)} kit(s) removed"
+                       f"{f', {dismissed} suggestion(s) dismissed' if dismissed else ''}. Not picked or suggested again.")
+    return {"removed": gone, "dismissed": dismissed, "filters": f}
+
+
+def refill(user_id: str, want: int = 1, now: datetime | None = None) -> list[dict]:
+    """Bring in the next best saved lead(s) after a skip, without a full cycle (no board fetches). Same gates and
+    ranking as run_cycle. One LLM kit pass when configured and a resume is saved; otherwise a template kit that
+    the next cycle upgrades (carried forward)."""
+    if want <= 0:
+        return []
+    now = now or _utc()
+    settings = store.get_agent_settings(user_id)
+    targets_set = _targets_set(settings)
+    rules = rules_for(user_id, settings.get("filters"))
+    resume = settings["resume_text"] or os.getenv("RESUME_TEXT", "")
+    signals, statuses = store.feedback_signal_counts(user_id), store.lead_statuses(user_id)
+    down = {r["url"] for r in store.feedback_rows(user_id) if r["signal"] == "down"}
+    kitted, keys, cands = store.kit_urls(user_id), set(), []
+    for j in _saved_pool(user_id, now):
+        u = j["url"]
+        if u in kitted or statuses.get(u) or u in down or omit_reason(j, rules) or (targets_set and not _still_eligible(j, rules)):
+            continue
+        k = dedupe_key(j)
+        if k in keys:
+            continue
+        keys.add(k)
+        cands.append(_score(j, rules, resume, signals))
+    cands.sort(key=_rank_key)
+    cycle, budget, out, carry = "skip-" + now.strftime("%Y%m%dT%H%M%S"), LLMBudget(), [], []
+    for j in cands[:want]:
+        kit = template_kit(j, rules, "Next best after your skip: " + _why(j), "rules", now.strftime(ISO))
+        upgrade = llm_kit(j, resume, budget) if budget.available() else None
+        if upgrade:
+            kit.update(upgrade)
+        elif fit_service.llm_configured() and resume:
+            carry.append(j["url"])
+        kit.pop("created_at", None)
+        store.save_kit(user_id, j["url"], cycle, kit)
+        store.add_activity(user_id, cycle, "kit", f"Apply kit ready ({kit['kit_source']}) after your skip: "
+                           f"{clean(j.get('title'), 100)} at {clean(j.get('company'), 60)}.", j["url"])
+        out.append(kit)
+    if carry:
+        prior = [u for u in (settings.get("carry_forward") or []) if isinstance(u, str)]
+        store.save_agent_settings(user_id, carry_forward=list(dict.fromkeys(prior + carry))[:20])
+    if not out:
+        store.add_activity(user_id, cycle, "skip", "No more saved leads match right now. Run a Full Search or wait for the next run.")
+    return out
+
+
+def skip_kit(user_id: str, url: str, reason: str) -> dict | None:
+    """reason: not_for_me | too_senior | company. Marks the lead Skipped (the same down-signal the status menu
+    gives), removes its kit (or every kit from that company), and brings in as many replacements."""
+    kit = next((k for k in store.list_kits(user_id, 200) if k["url"] == url), None)
+    if kit is None:
+        return None
+    store.set_lead_status(user_id, url, "Skipped", kit.get("company", ""), kit.get("title", ""))
+    store.delete_kits(user_id, [url])
+    removed, out = [url], {}
+    if reason == "company" and kit.get("company"):
+        out = hide_company(user_id, kit["company"])
+        removed += [u for u in out["removed"] if u != url]
+    else:
+        why = "too senior" if reason == "too_senior" else "not for you"
+        asked = f" (asks {kit['years_asked']}+ years)" if reason == "too_senior" and kit.get("years_asked") else ""
+        store.add_activity(user_id, "", "skip", f"You skipped {clean(kit.get('title'), 100)} at "
+                           f"{clean(kit.get('company'), 60)}: {why}{asked}.", url)
+    added = refill(user_id, min(len(removed), 3))
+    return {"removed": removed, "added": added, "dismissed": out.get("dismissed", 0), "filters": out.get("filters")}
 
 
 def run_due(now: datetime | None = None) -> list[dict]:

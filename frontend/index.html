@@ -133,7 +133,7 @@ main { padding:20px 24px; min-width:0; }
 
 .score-wrap { display:flex; align-items:center; gap:7px; }
 .score-num { font-family:var(--mono); font-size:14px; font-weight:700; width:28px; text-align:right; }
-.bar { width:56px; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+.bar { width:40px; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
 .bar > div { height:100%; border-radius:3px; }
 
 .fb-wrap { display:flex; gap:4px; align-items:center; justify-content:flex-end; }
@@ -141,7 +141,7 @@ main { padding:20px 24px; min-width:0; }
 .fb-btn:hover { border-color:var(--ink); background:var(--soft); }
 .fb-btn[aria-pressed="true"].up   { background:var(--green-bg); border-color:var(--green); }
 .fb-btn[aria-pressed="true"].down { background:var(--red-bg);   border-color:var(--red); }
-.btn-apply { display:inline-flex; align-items:center; min-height:36px; padding:0 14px; background:var(--ink); color:var(--bg); border-radius:var(--radius-sm); font-family:var(--display); font-size:11px; font-weight:600; text-decoration:none; white-space:nowrap; transition:filter .15s; }
+.btn-apply { display:inline-flex; align-items:center; min-height:36px; padding:0 14px; background:var(--ink); color:var(--bg); border-radius:var(--radius-sm); font-family:var(--display); font-size:12.5px; font-weight:600; text-decoration:none; white-space:nowrap; transition:filter .15s; }
 .btn-apply:hover { filter:brightness(1.15); }
 
 .job-details td { padding:4px 14px 14px; background:var(--soft); }
@@ -197,6 +197,14 @@ main { padding:20px 24px; min-width:0; }
 .alist li.sel { border-color:var(--duty); box-shadow:inset 3px 0 0 var(--duty); }
 .alist .meta { font-size:11.5px; color:var(--muted); margin-top:3px; }
 .kit-item { cursor:pointer; }
+.kit-x { width:30px; height:30px; flex-shrink:0; border:1px solid transparent; border-radius:50%; background:none; color:var(--muted); cursor:pointer; font-size:15px; line-height:1; transition:background .15s, color .15s, border-color .15s; }
+.kit-x:hover { background:var(--red-bg); color:var(--red); border-color:var(--red); }
+.kit-side { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.skip-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:10px 0 2px; padding-top:10px; border-top:1px dashed var(--border); }
+.skip-row .hint { margin-right:2px; }
+.skip-row .btn-sm:hover { border-color:var(--red); color:var(--red); background:var(--red-bg); }
+.yrs { font-size:11px; padding:1px 7px; border-radius:10px; background:var(--amber-bg); color:var(--amber); font-weight:600; white-space:nowrap; }
+li.skel.refill { display:flex; align-items:center; padding-left:14px; color:var(--muted); font-size:12.5px; }
 .kit-row { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
 .kit-detail h4 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:16px 0 8px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .kit-title { font-size:16px; font-weight:700; line-height:1.3; }
@@ -204,7 +212,7 @@ main { padding:20px 24px; min-width:0; }
 .kit-detail ul { padding-left:18px; display:flex; flex-direction:column; gap:4px; font-size:13px; }
 .kit-detail .qa { border-top:1px solid var(--border); padding:10px 0; font-size:13px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; align-items:start; }
 .kit-detail .qa b { display:block; margin-bottom:3px; }
-.kit-detail .qa .btn-sm { grid-row:1 / span 2; grid-column:2; }
+.kit-detail .qa .btn-sm { grid-row:1; grid-column:2; }
 .flag-box { background:var(--amber-bg); color:var(--amber); border-radius:var(--radius-sm); padding:8px 10px; font-size:12px; margin-top:8px; }
 .badge-agent { display:inline-block; font-size:9.5px; letter-spacing:.06em; padding:2px 7px; border-radius:20px; background:var(--duty-bg); color:var(--duty); border:1px solid var(--duty); text-transform:uppercase; font-weight:700; margin-left:6px; vertical-align:middle; }
 .status-sel { width:auto !important; height:36px !important; padding:0 8px !important; font-size:12.5px !important; flex-shrink:0; }
@@ -233,10 +241,61 @@ main { padding:20px 24px; min-width:0; }
 .alist li.appr { display:flex; align-items:center; gap:10px; }
 .appr-text { flex:1; min-width:0; }
 .appr-btns { display:flex; gap:6px; flex-shrink:0; }
-.appr-btns .btn-sm { width:40px; padding:0; font-size:15px; }
+.appr-btns .btn-sm { width:36px; padding:0; font-size:14px; }
 .appr-btns [data-decision="accept"]:hover { border-color:var(--green); color:var(--green); background:var(--green-bg); }
-.appr-btns [data-decision="reject"]:hover { border-color:var(--red); color:var(--red); background:var(--red-bg); }
+.appr-btns [data-hide-co]:hover, .appr-btns [data-decision="reject"]:hover { border-color:var(--red); color:var(--red); background:var(--red-bg); }
 .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+
+/* ── loaders + motion (transform/opacity only; off under reduced motion) ── */
+.duty-toggle { border-bottom:1px solid var(--duty) !important; }
+.count { font-size:11.5px; font-weight:600; color:var(--muted); margin-left:4px; }
+.is-busy { position:relative; color:transparent !important; pointer-events:none; }
+.is-busy::after { content:""; position:absolute; inset:0; margin:auto; width:14px; height:14px; border:2px solid currentColor; border-color:var(--muted) var(--muted) var(--muted) transparent; border-radius:50%; animation:spin .7s linear infinite; }
+.btn.is-busy::after, .btn-sm.primary.is-busy::after { border-color:var(--duty-ink) var(--duty-ink) var(--duty-ink) transparent; }
+.skel { display:block; min-height:44px; border:none !important; border-radius:var(--radius-sm); background:linear-gradient(90deg, var(--border) 0%, var(--soft) 50%, var(--border) 100%) 0 0 / 200% 100%; animation:shimmer 1.2s linear infinite; }
+.skel.chip-skel { display:inline-block; min-height:30px; width:96px; border-radius:20px; }
+@keyframes shimmer { to { background-position:-200% 0; } }
+.enter { animation:enter .16s cubic-bezier(.2,.8,.2,1); }
+@keyframes enter { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+.leaving { animation:leave .12s ease-in forwards; pointer-events:none; }
+@keyframes leave { to { opacity:0; transform:scale(.96); } }
+.pending { opacity:.55; }
+.progress { flex-basis:100%; height:3px; border-radius:2px; background:var(--surface); overflow:hidden; position:relative; }
+.progress::after { content:""; position:absolute; inset:0; width:35%; background:var(--duty); border-radius:2px; animation:indet 1.3s ease-in-out infinite; }
+@keyframes indet { from { transform:translateX(-100%); } to { transform:translateX(300%); } }
+.dot.running { background:var(--duty); animation:pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow:0 0 0 6px var(--duty-bg), 0 0 0 7px var(--duty); } }
+.drawer > summary { cursor:pointer; margin-bottom:0; }
+.drawer[open] > summary { margin-bottom:12px; }
+.chev { color:var(--muted); font-size:12px; transition:transform .16s; align-self:center; }
+.drawer[open] .chev { transform:rotate(180deg); }
+.sub-sec { border-top:1px solid var(--border); padding:14px 0 4px; }
+.sub-sec:first-of-type { border-top:none; padding-top:0; }
+.sub-title { font-size:13px; font-weight:700; margin-bottom:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.why { display:grid; grid-template-columns:auto 1fr auto; gap:5px 10px; align-items:center; font-size:12px; min-width:240px; flex:1 1 280px; max-width:620px; }
+.why .wbar { height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+.why .wbar > div { height:100%; background:var(--agent); border-radius:3px; }
+.why .wnum { font-family:var(--mono); color:var(--muted); text-align:right; }
+.why-title { grid-column:1 / -1; font-weight:700; font-size:12px; margin-top:2px; }
+.skills { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:4px; }
+.skills .tag { font-size:11px; }
+.score-btn { background:none; border:none; padding:0; cursor:pointer; text-align:left; }
+.score-btn:hover .score-num { text-decoration:underline dotted; }
+.sort-sel { width:auto !important; }
+.src-badge.sm { font-size:9.5px; padding:2px 7px; }
+.kit-sec > summary { display:block; list-style:none; cursor:pointer; }
+.drawer > summary::marker, .kit-sec > summary::marker { content:""; }
+.drawer > summary::before, .kit-sec > summary::before { content:none; display:none; }
+.agent-mode-table td:nth-child(2) { min-width:200px; }
+.agent-mode-table .tag { white-space:nowrap; }
+.agent-mode-table .fb-btn { width:32px; }
+.agent-mode-table th, .agent-mode-table td { padding-left:10px; padding-right:10px; }
+.kit-sec[open] > summary .chev { transform:rotate(180deg); }
+.kit-sec > summary h4 { margin-bottom:10px !important; }
+.kit-sec:not([open]) > summary h4 { margin-bottom:0 !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+}
 
 @media (max-width:980px) { .agent-grid { grid-template-columns:minmax(0,1fr); } .shell { grid-template-columns:300px minmax(0,1fr); } }
 @media (max-width:820px) {
@@ -408,6 +467,10 @@ main { padding:20px 24px; min-width:0; }
       <select id="f-track" aria-label="Track" style="width:auto">
         <option value="">All tracks</option><option value="ft">Full-time</option><option value="c2c">Contract (C2C)</option>
       </select>
+      <select id="f-sort" class="sort-sel" aria-label="Sort leads">
+        <option value="score">Sort: Best match</option><option value="fit">Sort: Resume fit</option><option value="posted">Sort: Newest</option>
+        <option value="h1b">Sort: Strongest H-1B sponsor</option><option value="company">Sort: Company A–Z</option>
+      </select>
     </div>
     <div id="results">
       <div class="empty-state">
@@ -421,79 +484,96 @@ main { padding:20px 24px; min-width:0; }
 </section>
 
 <section id="tab-agent" class="agent-tab" role="tabpanel" hidden>
-  <div class="card duty">
+  <div class="card duty" id="duty-card">
     <div class="duty-main">
       <span class="dot" id="duty-dot"></span>
       <div>
         <div class="duty-title" id="duty-title">Agent is off duty</div>
-        <div class="hint" id="duty-line">Turn it on to have it check your leads and watchlist on a schedule.</div>
+        <div class="hint" id="duty-line" title="Each run picks the best leads from your saved Full Search results and your watchlist and writes an apply kit for each. It never applies or sends anything.">Turn it on to have it check your leads and watchlist on a schedule.</div>
       </div>
     </div>
     <div class="duty-controls">
       <button type="button" class="toggle-row duty-toggle" id="duty-toggle" aria-pressed="false"><span class="toggle-name">On duty</span><span class="switch"></span></button>
-      <select id="duty-interval" aria-label="How often the agent runs">
-        <option value="6">every 6h</option><option value="12">every 12h</option><option value="24" selected>daily</option>
-        <option value="48">every 2 days</option><option value="72">every 3 days</option><option value="168">weekly</option>
-      </select>
       <button class="btn duty-btn" id="duty-run" type="button">Run now</button>
     </div>
+    <div class="progress" id="duty-progress" hidden></div>
   </div>
-  <p class="hint">Each run picks today's best leads from your saved Full Search results and your watchlist, and writes an apply kit for each. It never applies or sends anything: you review, copy and submit.</p>
   <div class="agent-grid">
     <div class="agent-col">
       <div class="card tone" style="--tone:var(--duty);--tone-bg:var(--duty-bg)">
-        <div class="sec-head"><span class="sec-icon" aria-hidden="true">☀</span><div class="sec-text"><div class="sec-title">Today's picks</div><div class="sec-sub">The leads the agent picked for you to apply to. Click one to open its kit.</div></div><span class="hint" id="brief-date"></span></div>
-        <div id="brief"><div class="loading"><div class="spinner"></div>Loading…</div></div>
-        <div class="section-label" style="margin-top:14px"><span>Leads with apply kits</span><span id="kits-count"></span></div>
-        <ul class="alist" id="kits"></ul>
+        <div class="sec-head"><span class="sec-icon" aria-hidden="true">☀</span><div class="sec-text"><div class="sec-title">Today's picks <span class="count" id="kits-count"></span></div><div class="sec-sub" id="brief-line">Click a lead to open its apply kit.</div></div><span class="hint" id="brief-date"></span></div>
+        <div id="brief"></div>
+        <ul class="alist" id="kits"><li class="skel"></li><li class="skel"></li><li class="skel"></li></ul>
       </div>
       <div class="card tone kit-detail" id="kit-detail" style="--tone:var(--agent);--tone-bg:var(--agent-bg)" hidden></div>
     </div>
     <div class="agent-col">
-      <div class="card tone" id="approvals-card" style="--tone:var(--amber);--tone-bg:var(--amber-bg)">
-        <div class="sec-head"><span class="sec-icon" aria-hidden="true">✓</span><div class="sec-text"><div class="sec-title">Approvals</div><div class="sec-sub">Changes the agent suggests. Nothing happens until you accept.</div></div><button class="btn-sm primary" id="approve-all" type="button" hidden>Accept all</button></div>
+      <div class="card tone" id="approvals-card" style="--tone:var(--amber);--tone-bg:var(--amber-bg)" hidden>
+        <div class="sec-head"><span class="sec-icon" aria-hidden="true">✓</span><div class="sec-text"><div class="sec-title">Suggestions <span class="count" id="appr-count"></span></div><div class="sec-sub">Companies the agent suggests watching. Nothing changes until you accept.</div></div><button class="btn-sm primary" id="approve-all" type="button" hidden>Accept all</button></div>
         <ul class="alist" id="approvals"></ul>
       </div>
-      <div class="card tone" id="targets-card" style="--tone:var(--blue);--tone-bg:var(--blue-bg)">
-        <div class="sec-head"><span class="sec-icon" aria-hidden="true">⌖</span><div class="sec-text"><div class="sec-title">Where and what to look for</div><div class="sec-sub">The agent only picks jobs that match these.</div></div><span class="badge profile" id="t-badge">profile</span></div>
-        <label>Locations</label>
-        <div class="loc-chips" id="t-locs"></div>
-        <div class="row"><input type="text" id="t-loc-add" placeholder="City, ST or a state" maxlength="80" aria-label="Add a location">
-          <button class="btn-sm" id="t-loc-add-btn" type="button">Add</button></div>
-        <label class="check"><input type="checkbox" id="t-remote"> Include US remote roles</label>
-        <label for="t-titles">Job titles <span class="hint">(comma-separated)</span></label>
-        <textarea id="t-titles" rows="2" maxlength="1200"></textarea>
-        <div class="actions" style="margin-top:12px">
-          <button class="btn-sm primary" id="t-save" type="button">Save targets</button>
-          <button class="btn-sm" id="t-reset" type="button">Use profile</button>
+      <details class="card tone drawer" id="settings-card" style="--tone:var(--blue);--tone-bg:var(--blue-bg)">
+        <summary class="sec-head"><span class="sec-icon" aria-hidden="true">⚙</span><div class="sec-text"><div class="sec-title">Agent settings</div><div class="sec-sub" id="settings-sum">Where to look, which companies to watch, your resume.</div></div><span class="chev" aria-hidden="true">▾</span></summary>
+        <div class="sub-sec">
+          <div class="sub-title">Where and what to look for <span class="badge profile" id="t-badge">profile</span></div>
+          <label>Locations</label>
+          <div class="loc-chips" id="t-locs"><span class="skel chip-skel"></span><span class="skel chip-skel"></span></div>
+          <div class="row"><input type="text" id="t-loc-add" placeholder="City, ST or a state" maxlength="80" aria-label="Add a location">
+            <button class="btn-sm" id="t-loc-add-btn" type="button">Add</button></div>
+          <label class="check"><input type="checkbox" id="t-remote"> Include US remote roles</label>
+          <label for="t-titles">Job titles <span class="hint">(comma-separated)</span></label>
+          <textarea id="t-titles" rows="2" maxlength="1200"></textarea>
+          <div class="actions" style="margin-top:10px">
+            <button class="btn-sm primary" id="t-save" type="button">Save targets</button>
+            <button class="btn-sm" id="t-reset" type="button">Use profile</button>
+            <span class="hint" id="t-dirty" hidden>Unsaved changes</span>
+          </div>
         </div>
-        <p class="hint" style="margin-top:8px">The agent only picks jobs in these places. A "remote" job that is listed in another state is skipped.</p>
-      </div>
-      <div class="card tone" style="--tone:var(--hot);--tone-bg:var(--hot-bg)">
-        <div class="sec-head"><span class="sec-icon" aria-hidden="true">◎</span><div class="sec-text"><div class="sec-title">Watchlist</div><div class="sec-sub">Companies whose own job boards are checked every run.</div></div></div>
-        <div class="watch-chips" id="watchlist"></div>
-        <div class="row"><input type="text" id="watch-add" placeholder="Company name" maxlength="100" aria-label="Add a company to the watchlist">
-          <button class="btn-sm" id="watch-add-btn" type="button">Add</button></div>
-        <p class="hint" style="margin-top:6px">Checked every run for fresh postings on their public Greenhouse/Lever/Ashby job boards.</p>
-      </div>
-      <details class="card tone" id="notes-card" style="--tone:var(--muted);--tone-bg:var(--soft)">
-        <summary>Notes and resume <span class="hint" style="font-weight:400">: what the AI writes from</span></summary>
-        <label>Resume (PDF) <span class="hint">the AI writes kits only from facts in it</span></label>
-        <div class="file-zone">
-          <input type="file" accept=".pdf,application/pdf" id="agent-resume-input" aria-label="Upload resume PDF for the agent">
-          <strong id="agent-file-label">Upload PDF</strong>
-          <span class="hint">Saved for the agent · max 5 MB</span>
+        <div class="sub-sec" id="skip-sec">
+          <div class="sub-title">Skip rules <span class="hint" style="font-weight:400">· the agent never picks or suggests these</span></div>
+          <label for="t-max-years">Leave out roles that ask for more than</label>
+          <select id="t-max-years" style="width:auto;min-width:180px">
+            <option value="0">any years (no limit)</option><option value="3">3 years of experience</option><option value="5">5 years of experience</option>
+            <option value="7">7 years of experience</option><option value="8">8 years of experience</option><option value="10">10 years of experience</option>
+            <option value="12">12 years of experience</option><option value="15">15 years of experience</option>
+          </select>
+          <p class="hint" style="margin:4px 0 0">Read from the job description ("8+ years of experience"). Postings that don't say are kept.</p>
+          <label>Hidden companies</label>
+          <div class="watch-chips" id="hidden-cos"></div>
+          <div class="row"><input type="text" id="hide-add" placeholder="Company name" maxlength="100" aria-label="Company to hide">
+            <button class="btn-sm" id="hide-add-btn" type="button">Hide</button></div>
+          <button class="btn-sm" id="hide-bigtech" type="button" style="margin-top:8px">Hide big tech (Google, Amazon, Meta, Microsoft, Apple)</button>
         </div>
-        <label for="agent-notes">Notes for the agent <span class="hint">(plain sentences)</span></label>
-        <textarea id="agent-notes" rows="3" maxlength="2000" placeholder="Prefer healthcare and data platforms; avoid ad tech."></textarea>
-        <p class="hint" id="agent-resume-hint" style="margin-top:6px"></p>
-        <button class="btn-sm" id="agent-save" type="button" style="margin-top:8px">Save</button>
+        <div class="sub-sec">
+          <div class="sub-title">Watchlist <span class="hint" style="font-weight:400">· their Greenhouse/Lever/Ashby boards are checked every run</span></div>
+          <div class="watch-chips" id="watchlist"><span class="skel chip-skel"></span><span class="skel chip-skel"></span></div>
+          <div class="row"><input type="text" id="watch-add" placeholder="Company name" maxlength="100" aria-label="Add a company to the watchlist">
+            <button class="btn-sm" id="watch-add-btn" type="button">Add</button></div>
+        </div>
+        <div class="sub-sec" id="notes-card">
+          <div class="sub-title">Resume and notes <span class="hint" style="font-weight:400">· the AI writes kits only from facts in your resume</span></div>
+          <div class="file-zone">
+            <input type="file" accept=".pdf,application/pdf" id="agent-resume-input" aria-label="Upload resume PDF for the agent">
+            <strong id="agent-file-label">Upload PDF</strong>
+            <span class="hint" id="agent-resume-hint">max 5 MB</span>
+          </div>
+          <label for="agent-notes">Notes for the agent <span class="hint">(plain sentences)</span></label>
+          <textarea id="agent-notes" rows="3" maxlength="2000" placeholder="Prefer healthcare and data platforms; avoid ad tech."></textarea>
+          <button class="btn-sm" id="agent-save" type="button" style="margin-top:8px">Save notes</button>
+        </div>
+        <div class="sub-sec">
+          <div class="sub-title">Schedule</div>
+          <select id="duty-interval" aria-label="How often the agent runs" style="width:auto;min-width:160px">
+            <option value="6">every 6h</option><option value="12">every 12h</option><option value="24" selected>daily</option>
+            <option value="48">every 2 days</option><option value="72">every 3 days</option><option value="168">weekly</option>
+          </select>
+        </div>
       </details>
-      <div class="card tone" style="--tone:var(--muted);--tone-bg:var(--soft)">
-        <div class="sec-head"><span class="sec-icon" aria-hidden="true">≡</span><div class="sec-text"><div class="sec-title">Activity</div><div class="sec-sub">What the agent did and why, newest first.</div></div></div>
+      <details class="card tone drawer" id="activity-card" style="--tone:var(--muted);--tone-bg:var(--soft)">
+        <summary class="sec-head"><span class="sec-icon" aria-hidden="true">≡</span><div class="sec-text"><div class="sec-title">Activity</div><div class="sec-sub" id="activity-sum">What the agent did and why.</div></div><span class="chev" aria-hidden="true">▾</span></summary>
         <ul class="alist" id="activity"></ul>
         <button class="btn-sm more-btn" id="activity-more" type="button" hidden>Show all</button>
-      </div>
+      </details>
     </div>
   </div>
 </section>
@@ -556,6 +636,7 @@ function empty(icon, title, sub, spinner = false) {
 // ── state ──
 const state = { ats: true, jobspy: true, remotive: true, jsearch: false, adzuna: false, h1b: false, ai: false };
 const view = { mode: "none", jobs: [], q: "", hot: false, onlyNew: false, track: "", sort: "score" };
+if (["score", "fit", "posted", "h1b", "company"].includes(store.get("sort"))) view.sort = store.get("sort");
 let lastParams = null, resumeText = "";
 
 const SOURCES = [["ats","Employer boards","Greenhouse/Lever/Ashby/Workday"],["jobspy","JobSpy","Indeed/LinkedIn/Glassdoor"],
@@ -583,8 +664,46 @@ function filtered() {
   let jobs = view.jobs.filter(j =>
     (!q || `${j.title} ${j.company} ${j.location}`.toLowerCase().includes(q)) &&
     (!view.hot || j.hot_lead) && (!view.onlyNew || j.is_new) && (!view.track || (j.track || "ft") === view.track));
-  if (view.mode === "agent" && view.sort === "posted") jobs = [...jobs].sort((a, b) => String(b.posted).localeCompare(String(a.posted)));
-  return jobs;
+  const sc = j => num(view.mode === "agent" ? j.score : j.match), fit = j => (j.fit == null ? -1 : num(j.fit));
+  const cmp = {
+    score: (a, b) => sc(b) - sc(a) || fit(b) - fit(a),
+    fit: (a, b) => fit(b) - fit(a) || sc(b) - sc(a),
+    posted: (a, b) => String(b.posted || "").localeCompare(String(a.posted || "")) || sc(b) - sc(a),
+    h1b: (a, b) => num(b.score_parts?.h1b) - num(a.score_parts?.h1b) || sc(b) - sc(a),
+    company: (a, b) => String(a.company || "").localeCompare(String(b.company || "")) || sc(b) - sc(a),
+  }[view.sort];
+  return cmp ? [...jobs].sort(cmp) : jobs;
+}
+
+// "On what basis?": the Match score is the rule-based lead score (backend fit_service.score_lead);
+// Resume fit is the share of the job's key skills found in the resume (or an AI read when ✦).
+const PART_NAMES = [["h1b", "H-1B sponsor", 35], ["title", "Title", 25], ["geo", "Location", 15], ["industry", "Industry", 15], ["contact", "Contact", 10]];
+const partsMax = () => PART_NAMES.map(([k, l, d]) => [k, l, num(agentUI.state?.scoring?.max?.[k]) || d]);   // from this user's profile
+const hotAt = () => num(agentUI.state?.scoring?.hot) || 65;
+const MATCH_TIP = "Match (0-100): points for H-1B sponsor, title, location, industry and contact, plus your thumbs. Click a score for the breakdown.";
+const FIT_TIP = "Resume fit: % of the job's key skills found in your resume (✦ = AI read of the job vs your resume). — = no resume or no job text.";
+function scoreTip(j) {
+  const p = j.score_parts;
+  if (!p || typeof p !== "object") return MATCH_TIP;
+  return partsMax().map(([k, l, max]) => `${l} ${num(p[k])}/${max}`).join(" · ")
+    + (num(p.feedback) ? ` · your thumbs ${num(p.feedback) > 0 ? "+" : ""}${num(p.feedback)}` : "") + " (click for details)";
+}
+function whyHTML(j) {
+  const p = j.score_parts, rows = [];
+  if (p && typeof p === "object") {
+    rows.push(`<div class="why-title">Match ${esc(j.score ?? "—")}/100: how it was scored</div>`);
+    for (const [k, l, max] of partsMax()) {
+      const v = num(p[k]);
+      rows.push(`<span>${l}</span><div class="wbar"><div style="width:${Math.max(0, Math.min(100, v / max * 100))}%"></div></div><span class="wnum">${v}/${max}</span>`);
+    }
+    if (num(p.feedback)) rows.push(`<span>Your thumbs</span><span></span><span class="wnum">${num(p.feedback) > 0 ? "+" : ""}${num(p.feedback)}</span>`);
+  }
+  const matched = (j.matched || []).filter(x => typeof x === "string"), missing = (j.missing || []).filter(x => typeof x === "string");
+  rows.push(`<div class="why-title">Resume fit ${j.fit != null ? esc(j.fit) + "%" : "—"} <span class="hint" style="font-weight:400">${j.fit_source === "llm" ? "AI read of the job vs your resume" : "skills from the job found in your resume"}</span></div>`);
+  if (matched.length) rows.push(`<div class="skills"><span class="hint">In your resume:</span>${matched.slice(0, 8).map(m => `<span class="tag t-good">${esc(m)}</span>`).join("")}</div>`);
+  if (missing.length) rows.push(`<div class="skills"><span class="hint">Not found:</span>${missing.slice(0, 8).map(m => `<span class="tag">${esc(m)}</span>`).join("")}</div>`);
+  if (j.fit == null) rows.push(`<div class="skills hint">No resume saved yet, or the posting has no description to compare.</div>`);
+  return `<div class="why">${rows.join("")}</div>`;
 }
 
 function renderJobs() {
@@ -602,15 +721,15 @@ function renderJobs() {
     const contactUrl = agent ? safeUrl(j.contact_link || "") : "";
     const hasDetails = agent;  // contact link / sponsorship answer are optional; "Draft outreach" is always offered
     return `<tr class="job-row${fb === "down" ? " disliked" : ""}">
-      ${agent || ai ? `<td><div class="score-wrap"><span class="score-num" style="color:${scoreColor(score)}">${score || "—"}</span>
-        ${score ? `<div class="bar"><div style="width:${Math.min(100, score)}%;background:${scoreColor(score)}"></div></div>` : ""}
-        ${agent && j.hot_lead ? '<span class="tag t-hot">HOT</span>' : ""}</div></td>` : ""}
-      <td><div class="job-title">${j.is_new ? '<span class="new-dot" title="New"></span>' : ""}${esc(j.title)}${agentBadge(j.url)}</div>
+      ${agent || ai ? `<td>${agent ? `<button type="button" class="score-btn" data-more="${i}" title="${esc(scoreTip(j))}" aria-label="Match ${score || "unknown"}: show how it was scored">` : ""}<div class="score-wrap"><span class="score-num" style="color:${scoreColor(score)}">${score || "—"}</span>
+        <div class="bar">${score ? `<div style="width:${Math.min(100, score)}%;background:${scoreColor(score)}"></div>` : ""}</div>
+</div>${agent ? "</button>" : ""}</td>` : ""}
+      <td><div class="job-title">${j.is_new ? '<span class="new-dot" title="New"></span>' : ""}${esc(j.title)}${agent && j.hot_lead ? ' <span class="tag t-hot" title="Match ${hotAt()} or higher">HOT</span>' : ""}${agentBadge(j.url)}</div>
           <div class="job-company">${esc(j.company)}${agent && j.track === "c2c" ? ' <span class="tag t-info">C2C</span>' : ""}</div></td>
       <td><span class="tag" title="${esc(j.location)}">${esc(j.location)}</span></td>
       <td><span class="tag ${H1B_CLASS[h1b] || ""}" title="Company sponsorship signal">${esc(h1b || "—")}</span>
           ${agent && j.posting_visa && j.posting_visa !== "Unknown" ? `<div style="margin-top:4px"><span class="tag ${H1B_CLASS[j.posting_visa] || ""}" title="What the posting says">posting: ${esc(j.posting_visa)}</span></div>` : ""}</td>
-      ${agent ? `<td>${j.fit == null ? '<span class="hint">—</span>' : esc(j.fit)}${j.fit_source === "llm" ? ' <span class="hint" title="LLM-refined resume fit">✦</span>' : ""}</td>` : ""}
+      ${agent ? `<td>${j.fit == null ? '<span class="hint">—</span>' : esc(j.fit) + "%"}${j.fit_source === "llm" ? ' <span class="hint" title="AI read of the job vs your resume">✦</span>' : ""}</td>` : ""}
       <td class="nowrap"><div>${esc(j.posted)}</div><div class="job-company" title="${esc(j.source)}">${esc(String(j.source || "").replace(/^(ATS|JobSpy)\//, ""))}</div></td>
       <td><div class="fb-wrap">
         <button type="button" class="fb-btn up" data-fb="${i}" data-signal="up" aria-pressed="${fb === "up"}" title="Good fit" aria-label="Good fit">👍</button>
@@ -618,9 +737,11 @@ function renderJobs() {
         ${agent ? statusSelect(j.url, `data-status-idx="${i}"`) : ""}
         ${hasDetails ? `<button type="button" class="btn-sm" data-more="${i}" aria-expanded="false" title="Contact, sponsorship answer, outreach draft">⋯</button>` : ""}
         ${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${boardName(url) ? `Opens on ${esc(boardName(url))}` : "Opens the employer's posting"}">${boardName(url) ? esc(boardName(url)) : "Open"} →</a>` : ""}
-        ${url && boardName(url) ? `<a class="btn-sm" href="${esc(companySiteUrl(j))}" target="_blank" rel="noopener noreferrer" title="Find this job on the company's own site (skips job-board sign-up walls)">Company site</a>` : ""}</div></td>
+</div></td>
     </tr>${hasDetails ? `<tr class="job-details" id="jd-${i}" hidden><td colspan="${cols}"><div class="details-panel">
-        ${contactUrl ? `<a class="btn-sm" href="${esc(contactUrl)}" target="_blank" rel="noopener noreferrer">🔗 Find contact (LinkedIn)</a>` : ""}
+        ${whyHTML(j)}
+        <div class="actions" style="margin-top:0;flex-basis:100%">${url && boardName(url) ? `<a class="btn-sm" href="${esc(companySiteUrl(j))}" target="_blank" rel="noopener noreferrer" title="Find this job on the company's own site (skips job-board sign-up walls)">🔎 Company site</a>` : ""}
+        ${contactUrl ? `<a class="btn-sm" href="${esc(contactUrl)}" target="_blank" rel="noopener noreferrer">🔗 Find contact (LinkedIn)</a>` : ""}</div>
         ${j.sponsorship_answer ? `<div class="sponsor-answer"><b>Sponsorship answer:</b> ${esc(j.sponsorship_answer)}
           <button type="button" class="btn-sm" data-copy-sponsor="${i}">Copy</button></div>` : ""}
         <div class="outreach-wrap">
@@ -629,11 +750,11 @@ function renderJobs() {
           <button type="button" class="btn-sm" id="copy-draft-${i}" data-copy-draft="${i}" hidden>Copy draft</button>
         </div></div></td></tr>` : ""}`;
   }).join("");
-  $("results").innerHTML = `<div class="table-wrap"><table class="job-table"><thead><tr>
-      ${agent || ai ? `<th title="0-100: H1B 35 · Title 25 · Geo 15 · Industry 15 · Contact 10">Score</th>` : ""}
+  $("results").innerHTML = `<div class="table-wrap"><table class="job-table${agent ? " agent-mode-table" : ""}"><thead><tr>
+      ${agent || ai ? `<th title="${agent ? esc(MATCH_TIP) : "AI score"}"${view.sort === "score" ? ' aria-sort="descending"' : ""}>${agent ? "Match" : "Score"}</th>` : ""}
       <th>Role</th><th>Location</th><th title="Company sponsorship signal, and what the posting says">H1B</th>
-      ${agent ? `<th title="Resume keyword fit (✦ = LLM-refined, when a BYO LLM key is configured)">Fit</th>` : ""}
-      <th class="${agent ? "sortable" : ""}" data-sort="posted" title="${agent ? "Click to sort by date" : ""}">Posted</th><th></th>
+      ${agent ? `<th title="${esc(FIT_TIP)}"${view.sort === "fit" ? ' aria-sort="descending"' : ""}>Resume fit</th>` : ""}
+      <th${view.sort === "posted" ? ' aria-sort="descending"' : ""}>Posted</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -989,177 +1110,383 @@ function showTab(name) {
   if (name === "agent" && (agentUI.connected || $("conn-dot").classList.contains("bad"))) loadAgentState(agentUI.connected ? 1 : 6);
 }
 
+// Every Agent change updates the screen first and saves in the background (the server pushes to the data
+// repo asynchronously too). A failed save puts the old value back and says so. Explicit saves get a spinner.
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+async function okJSON(r) {
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
+async function busy(btn, fn) {
+  if (!btn || btn.classList.contains("is-busy")) return;
+  btn.classList.add("is-busy"); btn.disabled = true;
+  try { return await fn(); } finally { btn.classList.remove("is-busy"); btn.disabled = false; }
+}
+function removeAnimated(el, then) {   // 120 ms fade/scale, then re-render
+  if (!el) return then();
+  el.classList.add("leaving"); setTimeout(then, 120);
+}
+
 async function loadAgentState(tries = 1) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      const r = await api("/agentmode/state");
-      if (r.ok) {
-        agentUI.state = await r.json();
-        renderAgent();
-        if (view.jobs.length) renderJobs();   // refresh badges/statuses in the Search tab too
-        return true;
-      }
-    } catch (e) { if (/Unauthorized/.test(e.message)) return false; }
-    if (i + 1 < tries) await new Promise(res => setTimeout(res, 4000));
-  }
-  if (!agentUI.state) $("brief").innerHTML = '<p class="hint">Could not reach the server. <button class="btn-sm" type="button" data-retry-agent>Try again</button></p>';
-  return false;
+  const slow = setTimeout(() => {
+    if (!agentUI.state) $("brief").innerHTML = '<div class="loading"><div class="spinner"></div>Waking the server (free plan: this can take up to a minute)…</div>';
+  }, 4000);
+  try {
+    for (let i = 0; i < tries; i++) {
+      try {
+        const r = await api("/agentmode/state");
+        if (r.ok) {
+          agentUI.state = await r.json();
+          renderAgent();
+          if (view.jobs.length) renderJobs();   // refresh badges/statuses in the Search tab too
+          return true;
+        }
+      } catch (e) { if (/Unauthorized/.test(e.message)) return false; }
+      if (i + 1 < tries) await sleep(4000);
+    }
+    if (!agentUI.state) $("brief").innerHTML = '<p class="hint">Could not reach the server. <button class="btn-sm" type="button" data-retry-agent>Try again</button></p>';
+    return false;
+  } finally { clearTimeout(slow); }
+}
+
+function setRunning(on) {
+  const b = $("duty-run");
+  b.disabled = on; b.textContent = on ? "Running…" : "Run now";
+  $("duty-progress").hidden = !on;
+  $("duty-dot").classList.toggle("running", on);
 }
 
 function renderAgent() {
   const st = agentUI.state; if (!st) return;
-  const s = st.settings || {};
+  const s = st.settings || {}, running = !!st.running || agentUI.polling;
   $("duty-toggle").setAttribute("aria-pressed", String(!!s.enabled));
   $("duty-interval").value = String(s.interval_hours || 24);
   $("duty-dot").className = "dot" + (s.enabled ? " on" : "");
-  $("duty-title").textContent = st.running ? "Agent is working…" : s.enabled ? "Agent is on duty" : "Agent is off duty";
-  $("duty-line").textContent = `Last run: ${fmtWhen(s.last_run)} · Next run: ${s.enabled ? (s.next_run ? fmtWhen(s.next_run) : "at the next scheduled check") : "off"}`
-    + ` · ${s.llm ? "LLM picks + kits" : "rule-based picks + template kits (no LLM key)"}`;
-  $("duty-run").disabled = !!st.running;
+  $("duty-title").textContent = running ? "Agent is working…" : s.enabled ? "Agent is on duty" : "Agent is off duty";
+  $("duty-line").textContent = running ? "Reading your leads and watchlist, then writing apply kits. This can take a few minutes."
+    : `Last run ${fmtWhen(s.last_run)} · Next ${s.enabled ? (s.next_run ? fmtWhen(s.next_run) : "at the next scheduled check") : "off"}`;
+  setRunning(running);
   if (document.activeElement !== $("agent-notes")) $("agent-notes").value = s.notes || "";
-  $("agent-resume-hint").textContent = s.has_resume ? "Resume saved for the agent. To replace it, upload a new one in the Search tab, then click Save here."
-    : "No resume saved yet: upload one in the Search tab, then click Save here, so kits can be tailored.";
+  $("agent-resume-hint").textContent = s.has_resume ? "Saved ✓ · upload again to replace" : "No resume yet · max 5 MB";
   renderTargets();
+  const t = s.filters, tSet = hasTargets(t), nLoc = t ? (t.locations || []).length : null;
+  $("settings-sum").textContent = [tSet ? `${nLoc ? `${nLoc} place${nLoc === 1 ? "" : "s"}` : "anywhere"}${t.remote_ok ? " + remote" : ""}` : "your profile's places",
+    `${(st.watchlist || []).length} watched`,
+    ...((t?.exclude_companies || []).length ? [`${t.exclude_companies.length} hidden`] : []), ...(t?.max_years ? [`≤${t.max_years} yrs`] : []), s.has_resume ? "resume saved" : "no resume yet", `runs ${$("duty-interval").selectedOptions[0]?.text || "daily"}`].join(" · ");
+  if (!agentUI.drawerInit) { agentUI.drawerInit = true; if (!s.has_resume || !tSet) $("settings-card").open = true; }
 
   const b = st.brief || {};
   $("brief-date").textContent = b.date || "";
   const fu = (b.follow_ups || []).map(f => `<li><b>${esc(f.title)}</b> at ${esc(f.company)}<div class="meta">Applied ${esc(f.days)} days ago, no change: time for a follow-up note.</div></li>`).join("");
   const needResume = s.llm && !s.has_resume;
   $("brief").innerHTML = `${needResume ? `<div class="flag-box" style="margin:0 0 10px"><b>Add your resume</b> so the AI can write tailored kits (until then kits are templates). <button class="btn-sm" type="button" data-open-notes style="margin-left:6px">Upload resume</button></div>` : ""}
-    <div class="brief-head">${esc(b.headline || "Nothing yet. Click Run now.")}</div>
-    ${fu ? `<div class="section-label" style="margin-top:12px">Follow-ups due</div><ul class="alist">${fu}</ul>` : ""}`;
+    ${b.headline ? `<div class="brief-head">${esc(b.headline)}</div>` : ""}
+    ${fu ? `<div class="section-label" style="margin-top:12px">Follow-ups due</div><ul class="alist" style="margin-bottom:12px">${fu}</ul>` : ""}`;
 
   const kits = st.kits || [];
   if (!kits.some(k => k.url === agentUI.sel)) agentUI.sel = kits[0]?.url || "";
-  $("kits-count").textContent = kits.length ? `${kits.length} ready` : "";
-  $("kits").innerHTML = kits.length ? kits.map((k, i) => `<li class="kit-item${k.url === agentUI.sel ? " sel" : ""}" data-kit-open="${esc(k.url)}">
-      <div class="kit-row"><div><b>${esc(k.title)}</b> <span class="src-badge ${k.kit_source === "llm" ? "ai" : "tpl"}" style="font-size:9.5px;padding:2px 7px">${k.kit_source === "llm" ? "AI" : "Template"}</span><div class="meta">${esc(k.company)} · ${esc(k.location)} · score ${esc(k.score ?? "—")}${k.fit != null ? ` · fit ${esc(k.fit)}` : ""}</div></div>
-      ${statusSelect(k.url, `data-kit-status="${i}"`)}</div><div class="meta">${esc(k.reason)}</div></li>`).join("")
-    : '<li class="hint">No kits yet. Click Run now after a Full Search has saved some leads, or add companies to the watchlist.</li>';
+  $("kits-count").textContent = kits.length ? `(${kits.length})` : "";
+  const refill = Array.from({ length: agentUI.refilling || 0 }, () => '<li class="skel refill">Finding your next pick…</li>').join("");
+  $("kits").innerHTML = kits.length || refill ? refill + kits.map((k, i) => `<li class="kit-item${k.url === agentUI.sel ? " sel" : ""}${k.fresh ? " enter" : ""}" data-kit-open="${esc(k.url)}">
+      <div class="kit-row"><div><b>${esc(k.title)}</b> <span class="src-badge sm ${k.kit_source === "llm" ? "ai" : "tpl"}">${k.kit_source === "llm" ? "AI" : "Template"}</span>${yrsBadge(k)}
+        <div class="meta">${esc(k.company)} · ${esc(k.location || "location not listed")} · <span title="${esc(scoreTip(k))}">Match ${esc(k.score ?? "—")}</span>${k.fit != null ? ` · <span title="${esc(FIT_TIP)}">Resume fit ${esc(k.fit)}%</span>` : ""}</div></div>
+      <div class="kit-side">${statusSelect(k.url, `data-kit-status="${i}"`)}<button type="button" class="kit-x" data-skip="not_for_me" data-skip-url="${esc(k.url)}" title="Skip: not for me (the agent brings the next best)" aria-label="Skip ${esc(k.title)}">×</button></div></div></li>`).join("")
+    : `<li class="hint">${running ? "Working on it…" : "No kits yet. Click Run now after a Full Search has saved some leads, or add companies to your watchlist in Agent settings."}</li>`;
+  kits.forEach(k => { delete k.fresh; });
   renderKitDetail();
 
   const appr = st.approvals || [];
+  $("approvals-card").hidden = !appr.length;
+  $("appr-count").textContent = appr.length ? `(${appr.length})` : "";
   $("approve-all").hidden = appr.length < 2;
   $("approve-all").textContent = `Accept all ${appr.length}`;
-  $("approvals").innerHTML = appr.length ? appr.map(a => `<li class="appr"><div class="appr-text"><b>Watch ${esc(a.payload?.company || a.key)}?</b>
+  $("approvals").innerHTML = appr.map(a => `<li class="appr"><div class="appr-text"><b>Watch ${esc(a.payload?.company || a.key)}?</b>
       <div class="meta">${esc(a.reason)}${a.payload?.ats ? ` · ${esc(a.payload.ats)} board` : ""}</div></div>
-      <div class="appr-btns"><button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="accept" aria-label="Accept ${esc(a.payload?.company || a.key)}">✓</button>
-      <button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="reject" aria-label="Reject ${esc(a.payload?.company || a.key)}">✕</button></div></li>`).join("")
-    : '<li class="hint">Nothing to approve. The agent suggests companies to watch (strong H-1B sponsors with a lead you liked or ranked high). Accepting one means every run checks that company\'s own job board for fresh postings.</li>';
+      <div class="appr-btns"><button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="accept" title="Accept" aria-label="Accept ${esc(a.payload?.company || a.key)}">✓</button>
+      <button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="reject" title="Dismiss this suggestion" aria-label="Dismiss ${esc(a.payload?.company || a.key)}">✕</button>
+      <button class="btn-sm" type="button" data-hide-co="${esc(a.payload?.company || a.key)}" title="Hide this company: never pick or suggest it" aria-label="Hide ${esc(a.payload?.company || a.key)}">⊘</button></div></li>`).join("");
 
-  $("watchlist").innerHTML = (st.watchlist || []).map(w => `<span class="chip"><b>${esc(w.company)}</b>${w.ats ? ` · ${esc(w.ats)}` : ""}
-      <button type="button" data-unwatch="${esc(w.company)}" aria-label="Remove ${esc(w.company)}">×</button></span>`).join("") || '<span class="hint">No companies yet.</span>';
+  $("watchlist").innerHTML = (st.watchlist || []).map(w => `<span class="chip${w.pending ? " pending enter" : ""}"><b>${esc(w.company)}</b>${w.ats ? ` · ${esc(w.ats)}` : ""}
+      <button type="button" data-unwatch="${esc(w.company)}" aria-label="Remove ${esc(w.company)}"${w.pending ? " disabled" : ""}>×</button></span>`).join("") || '<span class="hint">No companies yet.</span>';
 
-  const acts = st.activity || [], shown = agentUI.allActivity ? acts : acts.slice(0, 6);
+  const sf = s.filters || {};
+  if (document.activeElement !== $("t-max-years")) $("t-max-years").value = String([0, 3, 5, 7, 8, 10, 12, 15].includes(+sf.max_years) ? +sf.max_years : 0);
+  $("hidden-cos").innerHTML = (sf.exclude_companies || []).map(c => `<span class="chip"><b>${esc(c)}</b>
+      <button type="button" data-unhide="${esc(c)}" aria-label="Show ${esc(c)} again" title="Show again">×</button></span>`).join("") || '<span class="hint">None yet. Use "Hide" on a pick or a suggestion.</span>';
+  const acts = st.activity || [], shown = agentUI.allActivity ? acts : acts.slice(0, 3);
+  $("activity-sum").textContent = acts.length ? `Latest: ${String(acts[0].message || "").slice(0, 90)}${String(acts[0].message || "").length > 90 ? "…" : ""}` : "What the agent did and why.";
   $("activity").innerHTML = shown.map(a => `<li><span class="act-kind">${esc(a.kind)}</span>${esc(a.message)}
       <div class="meta">${esc(fmtWhen(a.ts))}</div></li>`).join("") || '<li class="hint">No activity yet.</li>';
-  $("activity-more").hidden = acts.length <= 6;
+  $("activity-more").hidden = acts.length <= 3;
   $("activity-more").textContent = agentUI.allActivity ? "Show fewer" : `Show all ${acts.length}`;
 }
 
-function renderKitDetail() {
+function renderKitDetail(animate = false) {
   const k = (agentUI.state?.kits || []).find(x => x.url === agentUI.sel);
-  $("kit-detail").hidden = !k;
-  if (!k) { $("kit-detail").innerHTML = ""; return; }
+  const el = $("kit-detail");
+  el.hidden = !k;
+  if (!k) { el.innerHTML = ""; return; }
   const url = safeUrl(k.url), contact = safeUrl(k.contact_link || ""), fb = agentUI.fb[k.url] || "";
   const aiKit = k.kit_source === "llm";
-  $("kit-detail").innerHTML = `<div class="sec-head"><span class="sec-icon" aria-hidden="true">✎</span><div class="sec-text"><div class="sec-title">Apply kit</div>
+  const open = agentUI.kitOpen || (agentUI.kitOpen = {});
+  el.innerHTML = `<div class="sec-head"><span class="sec-icon" aria-hidden="true">✎</span><div class="sec-text"><div class="sec-title">Apply kit</div>
       <div class="sec-sub">Drafts to copy into your application. Nothing is sent for you.</div></div>
-      <span class="src-badge ${aiKit ? "ai" : "tpl"}">${aiKit ? "AI-written" : "Template"}</span></div>
+      <span class="src-badge ${aiKit ? "ai" : "tpl"}" title="${aiKit ? "Written with your AI key and fact-checked against your resume." : "Template kit: edit it before use."}">${aiKit ? "AI-written" : "Template"}</span></div>
     <div class="kit-title">${esc(k.title)}</div>
-    <div class="kit-sub">${esc(k.company)} · ${esc(k.location || "location not listed")}${k.score != null ? ` · score ${esc(k.score)}` : ""}</div>
+    <div class="kit-sub">${esc(k.company)} · ${esc(k.location || "location not listed")} · <span title="${esc(scoreTip(k))}">Match ${esc(k.score ?? "—")}</span>${k.fit != null ? ` · Resume fit ${esc(k.fit)}%` : ""} ${yrsBadge(k)}</div>
     <div class="actions">${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${boardName(url) ? `Open on ${esc(boardName(url))}` : "Open posting"} →</a>` : ""}
       ${url && boardName(url) ? `<a class="btn-sm" href="${esc(companySiteUrl(k))}" target="_blank" rel="noopener noreferrer">🔎 Company site</a>` : ""}
-      ${contact ? `<a class="btn-sm" href="${esc(contact)}" target="_blank" rel="noopener noreferrer">🔗 Find contact (LinkedIn)</a>` : ""}
-      <button type="button" class="fb-btn up" data-kit-fb="up" aria-pressed="${fb === "up"}" aria-label="Good fit">👍</button>
-      <button type="button" class="fb-btn down" data-kit-fb="down" aria-pressed="${fb === "down"}" aria-label="Not for me">👎</button>
-    </div><p class="hint" style="margin-top:8px">${k.kit_source === "llm" ? "Written with your AI key and fact-checked against your resume." : "Template kit (no AI key set): edit it before use."} Picked by ${k.picked_by === "llm" ? "the AI" : "ranking"}.</p>
+      ${contact ? `<a class="btn-sm" href="${esc(contact)}" target="_blank" rel="noopener noreferrer">🔗 Find contact</a>` : ""}
+      <button type="button" class="fb-btn up" data-kit-fb="up" aria-pressed="${fb === "up"}" aria-label="Good fit" title="Good fit: more like this">👍</button>
+    </div>
+    <div class="skip-row"><span class="hint">Not a fit?</span>
+      <button type="button" class="btn-sm" data-skip="not_for_me" data-skip-url="${esc(k.url)}">Skip</button>
+      <button type="button" class="btn-sm" data-skip="too_senior" data-skip-url="${esc(k.url)}" title="Skip it. Set a years limit in Agent settings to skip these automatically.">Too senior</button>
+      ${k.company ? `<button type="button" class="btn-sm" data-skip="company" data-skip-url="${esc(k.url)}" title="Remove all ${esc(k.company)} picks and never pick or suggest it again">Hide ${esc(k.company)}</button>` : ""}
+      <span class="hint">The agent brings in the next best pick.</span></div>
     ${(k.flags || []).length ? `<div class="flag-box"><b>Unverified content removed:</b> ${esc(k.flags.join("; "))}</div>` : ""}
+    <details class="kit-sec" data-kit-sec="why"${open.why ? " open" : ""}><summary><h4>Why this pick <span class="chev" aria-hidden="true">▾</span></h4></summary>
+      <p class="hint" style="margin-bottom:8px">${esc(k.reason || "")}</p>${whyHTML(k)}</details>
     <div class="kit-sec"><h4>Resume bullets</h4><ul>${(k.bullets || []).map(b => `<li>${esc(b)}</li>`).join("")}</ul></div>
     <div class="kit-sec"><h4><span>Cover note</span><button type="button" class="btn-sm" data-copy-kit="cover">Copy</button></h4>
     <textarea class="outreach-draft" rows="6" readonly>${esc(k.cover_note)}</textarea></div>
-    <div class="kit-sec"><h4>Screening answers</h4>${(k.screening || []).map((q, i) => `<div class="qa"><div><b>${esc(q.q)}</b>${esc(q.a)}</div>
-      <button type="button" class="btn-sm" data-copy-kit="qa" data-qa="${i}">Copy</button></div>`).join("")}</div>
-    <p class="hint" style="margin-top:8px">Posted ${esc(k.posted_at || k.posted || "?")} · surfaced ${esc(fmtWhen(k.surfaced_at))}. Review everything before you use it.</p>`;
+    <details class="kit-sec" data-kit-sec="qa"${open.qa ? " open" : ""}><summary><h4>Screening answers (${(k.screening || []).length}) <span class="chev" aria-hidden="true">▾</span></h4></summary>
+      ${(k.screening || []).map((q, i) => `<div class="qa"><div><b>${esc(q.q)}</b>${esc(q.a)}</div>
+      <button type="button" class="btn-sm" data-copy-kit="qa" data-qa="${i}">Copy</button></div>`).join("")}</details>
+    <p class="hint" style="margin-top:10px">Picked by ${k.picked_by === "llm" ? "the AI" : "ranking"} · posted ${esc(k.posted_at || k.posted || "?")} · surfaced ${esc(fmtWhen(k.surfaced_at))}. Review everything before you use it.</p>`;
+  if (animate) { el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter"); }
 }
 
-async function setStatus(url, status, title, company) {
+// ── skipping: "not this one" removes a pick at once and the server sends the next best in its place ──
+const hasTargets = f => !!(f && ((f.titles || []).length || f.locations || f.remote_ok != null));
+const yrsBadge = k => k.years_asked ? ` <span class="yrs" title="The posting asks for ${esc(k.years_asked)}+ years of experience">${esc(k.years_asked)}+ yrs</span>` : "";
+const BIG_TECH = ["Google", "Amazon", "Meta", "Microsoft", "Apple"];
+
+function mergeRefill(d) {   // apply a skip/hide response to the CURRENT state (a poll may have replaced it)
+  const st = agentUI.state; if (!st) return;
+  const rm = new Set(d.removed || []), added = (d.added || []).map(x => ({ ...x, fresh: true }));
+  const addUrls = new Set(added.map(x => x.url));
+  st.kits = [...added, ...(st.kits || []).filter(x => !rm.has(x.url) && !addUrls.has(x.url))];
+  if (d.filters && st.settings) st.settings.filters = d.filters;
+  if (added.length && !st.kits.some(x => x.url === agentUI.sel)) agentUI.sel = added[0].url;
+}
+const refillMsg = (d, lead) => (d.added || []).length ? `${lead} ${d.added.length === 1 ? "Here's the next best pick." : `Here are ${d.added.length} new picks.`}`
+  : `${lead} No more saved leads match right now: run a Full Search for more.`;
+
+async function skipKit(url, reason) {
+  const st = agentUI.state; if (!st || agentUI.refilling) return;
+  const k = (st.kits || []).find(x => x.url === url); if (!k) return;
+  const co = (k.company || "").toLowerCase(), statuses = st.statuses || {};
+  const gone = reason === "company" ? st.kits.filter(x => x.url === url || ((x.company || "").toLowerCase() === co && !statuses[x.url])) : [k];
+  const goneUrls = new Set(gone.map(x => x.url)), prevSel = agentUI.sel;
+  const take = () => { const s = agentUI.state; if (!s) return;
+    s.kits = (s.kits || []).filter(x => !goneUrls.has(x.url));
+    (s.statuses = s.statuses || {})[url] = "Skipped";
+    if (goneUrls.has(agentUI.sel)) agentUI.sel = s.kits[0]?.url || ""; };
+  agentUI.refilling = Math.min(gone.length, 3);
+  take();
+  const lis = [...document.querySelectorAll("#kits [data-kit-open]")].filter(li => goneUrls.has(li.dataset.kitOpen));
+  lis.forEach(li => li.classList.add("leaving"));
+  setTimeout(() => renderAgent(), 120);
+  if (goneUrls.has(prevSel)) renderKitDetail(true);
   try {
-    const r = await postJSON("/agentmode/status", { url: String(url).slice(0, 2000), status,
-      title: String(title || "").slice(0, 200), company: String(company || "").slice(0, 200) });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
-    if (agentUI.state) { agentUI.state.statuses = agentUI.state.statuses || {}; if (status === "New") delete agentUI.state.statuses[url]; else agentUI.state.statuses[url] = status; }
-    toast(`Marked ${status}.`);
-    loadAgentState();
-  } catch (e) { toast(e.message, true); }
+    const d = await okJSON(await postJSON("/agentmode/kits/skip", { url: String(url).slice(0, 2000), reason }));
+    agentUI.refilling = 0; mergeRefill(d); renderAgent(); renderKitDetail(true);
+    const lead = reason === "company" ? `${k.company} hidden${d.dismissed ? ` (and ${d.dismissed} suggestion${d.dismissed === 1 ? "" : "s"} dismissed)` : ""}.` : "Skipped.";
+    toast(refillMsg(d, lead) + (reason === "too_senior" && k.years_asked && !st.settings?.filters?.max_years ? " Tip: set a years limit in Agent settings to skip these automatically." : ""));
+    if (reason === "company") loadAgentState();   // watchlist, suggestions and activity changed too
+  } catch (e) {
+    agentUI.refilling = 0;
+    const s = agentUI.state;
+    if (s) { s.kits = [...gone.filter(g => !(s.kits || []).some(x => x.url === g.url)), ...(s.kits || [])];
+      if (s.statuses?.[url] === "Skipped") delete s.statuses[url]; agentUI.sel = prevSel; }
+    renderAgent(); toast(`Couldn't skip: ${e.message}`, true);
+  }
+}
+
+async function hideCompanies(names, btn) {
+  const st = agentUI.state; if (!st || !names.length) return;
+  const low = names.map(n => n.toLowerCase());
+  const matches = c => { c = (c || "").toLowerCase(); return low.some(n => c === n || c.startsWith(n + " ") || c.startsWith(n + ".")); };
+  const before = { kits: st.kits, approvals: st.approvals, watchlist: st.watchlist, filters: st.settings?.filters };
+  const statuses = st.statuses || {}, gone = (st.kits || []).filter(x => matches(x.company) && !statuses[x.url]).length;
+  st.kits = (st.kits || []).filter(x => !(matches(x.company) && !statuses[x.url]));
+  st.approvals = (st.approvals || []).filter(a => !matches(a.payload?.company || a.key));
+  st.watchlist = (st.watchlist || []).filter(w => !matches(w.company));
+  const f = { ...(st.settings?.filters || {}) }, have = new Set((f.exclude_companies || []).map(c => c.toLowerCase()));
+  f.exclude_companies = [...(f.exclude_companies || []), ...names.filter(n => !have.has(n.toLowerCase()))];
+  if (st.settings) st.settings.filters = f;
+  if (!st.kits.some(x => x.url === agentUI.sel)) agentUI.sel = st.kits[0]?.url || "";
+  agentUI.refilling = Math.min(gone, 3); renderAgent();
+  const run = async () => {
+    try {
+      const d = await okJSON(await postJSON("/agentmode/hide-company", { companies: names.map(n => n.slice(0, 80)) }));
+      agentUI.refilling = 0; mergeRefill(d); renderAgent();
+      toast(gone ? refillMsg(d, `Hidden: ${names.join(", ")}.`) : `Hidden: ${names.join(", ")}. The agent won't pick or suggest ${names.length === 1 ? "it" : "them"}.`);
+      loadAgentState();
+    } catch (e) {
+      agentUI.refilling = 0;
+      const s = agentUI.state;
+      if (s) { Object.assign(s, { kits: before.kits, approvals: before.approvals, watchlist: before.watchlist }); if (s.settings) s.settings.filters = before.filters; }
+      renderAgent(); toast(`Couldn't hide: ${e.message}`, true);
+    }
+  };
+  return btn ? busy(btn, run) : run();
+}
+
+async function saveSkipRule(patch, msg) {   // un-hide a company or change the years limit; kits it now rules out are replaced
+  const st = agentUI.state; if (!st?.settings) return;
+  const prev = st.settings.filters;
+  st.settings.filters = { ...(prev || {}), ...patch }; renderAgent();
+  try {
+    const d = await okJSON(await postJSON("/agentmode/settings", { filters: patch }));
+    if (agentUI.state) agentUI.state.settings = d;
+    toast(d.pruned ? `${msg} ${d.pruned} pick${d.pruned === 1 ? "" : "s"} no longer fit and ${d.pruned === 1 ? "was" : "were"} replaced.` : msg);
+    if (d.pruned) await loadAgentState(); else renderAgent();
+  } catch (e) {
+    if (agentUI.state?.settings) agentUI.state.settings.filters = prev;
+    renderAgent(); toast(`Couldn't save: ${e.message}`, true);
+  }
+}
+$("t-max-years").addEventListener("change", async e => {
+  const sel = e.target, n = +sel.value; sel.disabled = true;
+  try { await saveSkipRule({ max_years: n }, n ? `The agent now leaves out roles asking for more than ${n} years.` : "No years limit."); }
+  finally { sel.disabled = false; }
+});
+function hideFromInput() {
+  const v = $("hide-add").value.trim().slice(0, 80);
+  if (!v) return;
+  $("hide-add").value = "";
+  hideCompanies([v], $("hide-add-btn"));
+}
+$("hide-add-btn").addEventListener("click", hideFromInput);
+$("hide-add").addEventListener("keydown", e => { if (e.key === "Enter") hideFromInput(); });
+$("hide-bigtech").addEventListener("click", e => {
+  const have = new Set((agentUI.state?.settings?.filters?.exclude_companies || []).map(c => c.toLowerCase()));
+  const todo = BIG_TECH.filter(c => !have.has(c.toLowerCase()));
+  if (!todo.length) return toast("Big tech is already hidden.");
+  hideCompanies(todo, e.currentTarget);
+});
+$("hidden-cos").addEventListener("click", e => {
+  const b = e.target.closest("[data-unhide]"); if (!b || !agentUI.state?.settings) return;
+  const name = b.dataset.unhide, rest = (agentUI.state.settings.filters?.exclude_companies || []).filter(c => c !== name);
+  removeAnimated(b.closest(".chip"), () => saveSkipRule({ exclude_companies: rest }, `${name} can be picked again from the next run.`));
+});
+
+async function setStatus(url, status, title, company) {
+  const apply = v => { const st = agentUI.state; if (!st) return; st.statuses = st.statuses || {}; if (!v || v === "New") delete st.statuses[url]; else st.statuses[url] = v; };
+  const prev = agentUI.state?.statuses?.[url];
+  apply(status);   // the select already shows it
+  try {
+    await okJSON(await postJSON("/agentmode/status", { url: String(url).slice(0, 2000), status,
+      title: String(title || "").slice(0, 200), company: String(company || "").slice(0, 200) }));
+  } catch (e) {
+    apply(prev);
+    renderAgent(); if (view.jobs.length) renderJobs();
+    toast(`Couldn't save the status: ${e.message}`, true);
+  }
 }
 
 async function saveAgentSettings(body, msg) {
   try {
-    const r = await postJSON("/agentmode/settings", body), d = await r.json();
-    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    const d = await okJSON(await postJSON("/agentmode/settings", body));
+    if (agentUI.state) { agentUI.state.settings = d; renderAgent(); } else await loadAgentState();
     if (msg) toast(msg);
-    await loadAgentState();
     return true;
   } catch (e) { toast(e.message, true); return false; }
 }
 
 async function runAgentNow() {
-  $("duty-run").disabled = true;
+  if (agentUI.polling) return;
+  agentUI.polling = true; setRunning(true);
+  $("duty-title").textContent = "Agent is working…";
   try {
-    const r = await postJSON("/agentmode/run", {}), d = await r.json();
-    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-    toast("Agent is running. Results appear here when it finishes.");
-    const t0 = Date.now();
-    agentUI.polling = true;
+    await okJSON(await postJSON("/agentmode/run", {}));
+    const t0 = Date.now(); let done = false;
     while (Date.now() - t0 < 6 * 60 * 1000) {
-      await new Promise(res => setTimeout(res, 3000));
-      await loadAgentState();
-      if (!agentUI.state?.running) break;
+      await sleep(4000);
+      if (await loadAgentState() && !agentUI.state.running) { done = true; break; }
     }
-    toast("Agent run finished.");
+    toast(done ? "Agent run finished. New kits are in Today's picks." : "Still running. Kits will appear here when it finishes.");
   } catch (e) { toast(e.message, true); }
-  finally { agentUI.polling = false; $("duty-run").disabled = false; }
+  finally { agentUI.polling = false; renderAgent(); if (!agentUI.state) setRunning(false); }
 }
 
+$("tab-agent").addEventListener("toggle", e => {   // remember which kit sections are open across re-renders
+  const d = e.target.closest?.("[data-kit-sec]");
+  if (d) (agentUI.kitOpen || (agentUI.kitOpen = {}))[d.dataset.kitSec] = d.open;
+}, true);
 $("tab-agent").addEventListener("click", async e => {
-  if (e.target.closest("[data-open-notes]")) { $("notes-card").open = true; $("notes-card").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  if (e.target.closest("[data-open-notes]")) { $("settings-card").open = true; $("notes-card").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
   if (e.target.closest("[data-retry-agent]")) {
     $("brief").innerHTML = '<div class="loading"><div class="spinner"></div>Loading…</div>';
     if (await loadAgentState(6)) { checkConnection(1); loadSavedLeads(); }
     return;
   }
+  const skip = e.target.closest("[data-skip]");
+  if (skip) { e.stopPropagation(); return skipKit(skip.dataset.skipUrl, skip.dataset.skip); }
+  const hide = e.target.closest("[data-hide-co]");
+  if (hide) return hideCompanies([hide.dataset.hideCo]);
   const open = e.target.closest("[data-kit-open]");
   if (open && !e.target.closest("select")) {
-    agentUI.sel = open.dataset.kitOpen; renderAgent();
+    if (agentUI.sel !== open.dataset.kitOpen) {
+      agentUI.sel = open.dataset.kitOpen;
+      document.querySelectorAll("#kits .kit-item").forEach(li => li.classList.toggle("sel", li === open));
+      renderKitDetail(true);
+    }
     if (window.innerWidth <= 980) $("kit-detail").scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
   const appr = e.target.closest("[data-approve]");
   if (appr) {
+    if (!agentUI.state) return;
+    const id = String(appr.dataset.approve), accept = appr.dataset.decision === "accept";
+    const a = (agentUI.state.approvals || []).find(x => String(x.id) === id), name = a?.payload?.company || a?.key || "company";
+    const same = w => w.company.toLowerCase() === name.toLowerCase();
+    const decide = pending => { const st = agentUI.state; if (!st) return;   // idempotent: safe after a poll swaps the state
+      st.approvals = (st.approvals || []).filter(x => String(x.id) !== id);
+      if (accept) st.watchlist = [...(st.watchlist || []).filter(w => !same(w)), { company: name, ats: a?.payload?.ats || "", pending }]; };
+    appr.closest(".appr-btns")?.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    decide(true);
+    removeAnimated(appr.closest("li"), renderAgent);
     try {
-      const r = await postJSON(`/agentmode/approvals/${encodeURIComponent(appr.dataset.approve)}`, { decision: appr.dataset.decision });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      toast(appr.dataset.decision === "accept" ? "Added to your watchlist." : "Rejected. It won't be proposed again.");
-      loadAgentState();
-    } catch (err) { toast(err.message, true); }
+      await okJSON(await postJSON(`/agentmode/approvals/${encodeURIComponent(id)}`, { decision: appr.dataset.decision }));
+      decide(false); renderAgent();
+      toast(accept ? `Watching ${name}.` : "Dismissed. It won't be suggested again.");
+    } catch (err) {
+      const st = agentUI.state;
+      if (st && a) { st.approvals = [...(st.approvals || []).filter(x => String(x.id) !== id), a]; if (accept) st.watchlist = (st.watchlist || []).filter(w => !(same(w) && w.pending)); }
+      renderAgent(); toast(`Couldn't save: ${err.message}`, true);
+    }
     return;
   }
   const un = e.target.closest("[data-unwatch]");
   if (un) {
-    try { await api(`/agentmode/watchlist/${encodeURIComponent(un.dataset.unwatch)}`, { method: "DELETE" }); loadAgentState(); }
-    catch (err) { toast(err.message, true); }
+    if (!agentUI.state) return;
+    const name = un.dataset.unwatch, entry = (agentUI.state.watchlist || []).find(w => w.company === name);
+    const drop = () => { if (agentUI.state) agentUI.state.watchlist = (agentUI.state.watchlist || []).filter(w => w.company !== name); };
+    drop();
+    removeAnimated(un.closest(".chip"), renderAgent);
+    try {
+      const d = await okJSON(await api(`/agentmode/watchlist/${encodeURIComponent(name)}`, { method: "DELETE" }));
+      if (agentUI.state) { if (Array.isArray(d.watchlist)) agentUI.state.watchlist = d.watchlist; else drop(); }
+      setTimeout(renderAgent, 130);
+    } catch (err) {
+      if (agentUI.state && entry && !(agentUI.state.watchlist || []).some(w => w.company === name)) agentUI.state.watchlist = [...(agentUI.state.watchlist || []), entry];
+      setTimeout(renderAgent, 130); toast(`Couldn't remove ${name}: ${err.message}`, true);
+    }
     return;
   }
   const k = (agentUI.state?.kits || []).find(x => x.url === agentUI.sel);
   const copy = e.target.closest("[data-copy-kit]");
-  if (copy && k) return copyText(copy.dataset.copyKit === "cover" ? k.cover_note : (k.screening?.[+copy.dataset.qa]?.a || ""));
+  if (copy && k) { e.preventDefault(); return copyText(copy.dataset.copyKit === "cover" ? k.cover_note : (k.screening?.[+copy.dataset.qa]?.a || "")); }
   const fbb = e.target.closest("[data-kit-fb]");
   if (fbb && k) {
-    const sig = agentUI.fb[k.url] === fbb.dataset.kitFb ? "" : fbb.dataset.kitFb;
+    const prev = agentUI.fb[k.url] || "", sig = prev === fbb.dataset.kitFb ? "" : fbb.dataset.kitFb;
     agentUI.fb[k.url] = sig; renderKitDetail();
-    try { await postJSON("/feedback", { url: String(k.url).slice(0, 2000), title: String(k.title || "").slice(0, 200), company: String(k.company || "").slice(0, 200), signal: sig }); }
-    catch (err) { toast(err.message, true); }
+    try { await okJSON(await postJSON("/feedback", { url: String(k.url).slice(0, 2000), title: String(k.title || "").slice(0, 200), company: String(k.company || "").slice(0, 200), signal: sig })); }
+    catch (err) { agentUI.fb[k.url] = prev; renderKitDetail(); toast(`Couldn't save: ${err.message}`, true); }
   }
 });
 $("tab-agent").addEventListener("change", e => {
@@ -1171,30 +1498,46 @@ $("results").addEventListener("change", e => {
   if (sel) { const j = view.jobs[+sel.dataset.statusIdx]; if (j) setStatus(j.url, sel.value, j.title, j.company); }
 });
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => showTab(t.dataset.tab)));
-$("duty-toggle").addEventListener("click", () => {
-  const on = $("duty-toggle").getAttribute("aria-pressed") !== "true";
-  saveAgentSettings({ enabled: on, interval_hours: +$("duty-interval").value }, on ? "Agent is on duty." : "Agent is off duty.");
+$("duty-toggle").addEventListener("click", async () => {
+  const s = agentUI.state?.settings; if (!s) return;
+  const on = !s.enabled;
+  s.enabled = on; renderAgent();   // the switch moves now; it moves back if the save fails
+  if (!await saveAgentSettings({ enabled: on }, on ? "Agent is on duty." : "Agent is off duty.")) { s.enabled = !on; renderAgent(); }
 });
-$("duty-interval").addEventListener("change", () => saveAgentSettings({ interval_hours: +$("duty-interval").value }, "Schedule updated."));
+$("duty-interval").addEventListener("change", async e => {
+  const sel = e.target; sel.disabled = true;
+  try { await saveAgentSettings({ interval_hours: +sel.value }, "Schedule updated."); } finally { sel.disabled = false; }
+});
 $("duty-run").addEventListener("click", runAgentNow);
-$("agent-save").addEventListener("click", () => {
+$("agent-save").addEventListener("click", e => busy(e.currentTarget, () => {
   const body = { notes: $("agent-notes").value.slice(0, 2000) };
   if (resumeText) body.resume_text = resumeText.slice(0, 20000);
-  saveAgentSettings(body, resumeText ? "Preferences and resume saved." : "Preferences saved.");
-});
-$("watch-add-btn").addEventListener("click", async () => {
+  return saveAgentSettings(body, resumeText ? "Notes and resume saved." : "Notes saved.");
+}));
+async function addWatch() {
   const company = $("watch-add").value.trim().slice(0, 100);
-  if (!company) return;
+  if (!company || !agentUI.state) return;
+  const same = w => w.company.toLowerCase() === company.toLowerCase();
+  if ((agentUI.state.watchlist || []).some(same)) { $("watch-add").value = ""; return toast(`${company} is already on your watchlist.`); }
+  agentUI.state.watchlist = [...(agentUI.state.watchlist || []), { company, ats: "", pending: true }];
+  $("watch-add").value = ""; renderAgent();
   try {
-    const r = await postJSON("/agentmode/watchlist", { company });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    $("watch-add").value = ""; loadAgentState();
-  } catch (e) { toast(e.message, true); }
-});
+    const d = await okJSON(await postJSON("/agentmode/watchlist", { company }));
+    const st = agentUI.state;
+    if (st) st.watchlist = Array.isArray(d.watchlist) ? d.watchlist : [...(st.watchlist || []).filter(w => !same(w)), { company, ats: "", pending: false }];
+    renderAgent();
+  } catch (e) {
+    if (agentUI.state) agentUI.state.watchlist = (agentUI.state.watchlist || []).filter(w => !(w.pending && same(w)));
+    renderAgent();
+    $("watch-add").value = company; toast(`Couldn't add ${company}: ${e.message}`, true);
+  }
+}
+$("watch-add-btn").addEventListener("click", addWatch);
+$("watch-add").addEventListener("keydown", e => { if (e.key === "Enter") addWatch(); });
 
 // ── Agent targets: where and what the agent looks for (saved server-side, used by scheduled runs too) ──
 function renderTargets() {
-  const saved = agentUI.state?.settings?.filters || null;
+  const saved = hasTargets(agentUI.state?.settings?.filters) ? agentUI.state.settings.filters : null;
   if (!agentUI.targets) {
     const base = saved || agentUI.profile;
     if (!base) {
@@ -1202,49 +1545,61 @@ function renderTargets() {
       return;
     }
     agentUI.targets = { titles: [...(base.titles || [])], locations: [...(base.locations || [])], remote_ok: base.remote_ok !== false };
+    agentUI.targetsDirty = false;
   }
   const t = agentUI.targets;
   $("t-badge").textContent = saved ? "custom" : "profile";
   $("t-badge").className = "badge" + (saved ? "" : " profile");
-  $("t-locs").innerHTML = t.locations.map((l, i) => `<span class="chip"><b>${esc(l)}</b><button type="button" data-t-loc-rm="${i}" aria-label="Remove ${esc(l)}">×</button></span>`).join("")
+  $("t-locs").innerHTML = t.locations.map(l => `<span class="chip"><b>${esc(l)}</b><button type="button" data-t-loc-rm="${esc(l)}" aria-label="Remove ${esc(l)}">×</button></span>`).join("")
     || '<span class="hint">No places: the agent will consider any location.</span>';
   $("t-remote").checked = !!t.remote_ok;
   if (document.activeElement !== $("t-titles")) $("t-titles").value = t.titles.join(", ");
+  $("t-dirty").hidden = !agentUI.targetsDirty;
 }
+const targetsChanged = () => { agentUI.targetsDirty = true; $("t-dirty").hidden = false; };
 function addTargetLocation() {
   const v = $("t-loc-add").value.trim().slice(0, 80);
   if (!v || !agentUI.targets) return;
   if (agentUI.targets.locations.length >= 8) return toast("Up to 8 places.", true);
-  if (!agentUI.targets.locations.some(l => l.toLowerCase() === v.toLowerCase())) agentUI.targets.locations.push(v);
+  if (!agentUI.targets.locations.some(l => l.toLowerCase() === v.toLowerCase())) { agentUI.targets.locations.push(v); targetsChanged(); }
   $("t-loc-add").value = ""; renderTargets();
+  $("t-locs").lastElementChild?.classList.add("enter");
 }
 $("t-loc-add-btn").addEventListener("click", addTargetLocation);
 $("t-loc-add").addEventListener("keydown", e => { if (e.key === "Enter") addTargetLocation(); });
 $("t-locs").addEventListener("click", e => {
   const b = e.target.closest("[data-t-loc-rm]");
-  if (b && agentUI.targets) { agentUI.targets.locations.splice(+b.dataset.tLocRm, 1); renderTargets(); }
+  if (b && agentUI.targets) {
+    agentUI.targets.locations = agentUI.targets.locations.filter(l => l !== b.dataset.tLocRm); targetsChanged();
+    removeAnimated(b.closest(".chip"), renderTargets);
+  }
 });
-$("t-remote").addEventListener("change", e => { if (agentUI.targets) agentUI.targets.remote_ok = e.target.checked; });
-$("t-titles").addEventListener("input", e => { if (agentUI.targets) agentUI.targets.titles = splitList(e.target.value).slice(0, 15).map(x => x.slice(0, 80)); });
-$("t-save").addEventListener("click", async () => {
+$("t-remote").addEventListener("change", e => { if (agentUI.targets) { agentUI.targets.remote_ok = e.target.checked; targetsChanged(); } });
+$("t-titles").addEventListener("input", e => { if (agentUI.targets) { agentUI.targets.titles = splitList(e.target.value).slice(0, 15).map(x => x.slice(0, 80)); targetsChanged(); } });
+$("t-save").addEventListener("click", e => busy(e.currentTarget, async () => {
   const t = agentUI.targets;
   if (!t) return;
   if (!t.titles.length) return toast("Add at least one job title.", true);
   if (await saveAgentSettings({ filters: { titles: t.titles, locations: t.locations, remote_ok: t.remote_ok } }, "Targets saved. The next agent run uses them.")) {
     agentUI.targets = null; renderTargets();   // keep unsaved edits if the save failed
   }
-});
-$("t-reset").addEventListener("click", async () => {
+}));
+$("t-reset").addEventListener("click", e => busy(e.currentTarget, async () => {
   if (await saveAgentSettings({ clear_filters: true }, "The agent uses your profile again.")) { agentUI.targets = null; renderTargets(); }
-});
-$("approve-all").addEventListener("click", async () => {
+}));
+$("approve-all").addEventListener("click", e => busy(e.currentTarget, async () => {
+  if (!agentUI.state) return;
   try {
-    const r = await postJSON("/agentmode/approvals/accept-all", {}), d = await r.json();
-    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    const d = await okJSON(await postJSON("/agentmode/approvals/accept-all", {}));
+    const st = agentUI.state, accepted = (st.approvals || []).filter(a => a.kind === "watchlist_add" || !a.kind);
+    const have = new Set((st.watchlist || []).map(w => w.company.toLowerCase()));
+    st.approvals = (st.approvals || []).filter(a => a.kind && a.kind !== "watchlist_add");
+    st.watchlist = [...(st.watchlist || []), ...accepted.map(a => ({ company: a.payload?.company || a.key, ats: a.payload?.ats || "" }))
+      .filter(x => !have.has(x.company.toLowerCase()) && have.add(x.company.toLowerCase()))];
+    renderAgent();
     toast(`Added ${d.accepted} compan${d.accepted === 1 ? "y" : "ies"} to your watchlist.`);
-    loadAgentState();
-  } catch (e) { toast(e.message, true); }
-});
+  } catch (err) { toast(`Couldn't accept: ${err.message}`, true); }
+}));
 $("activity-more").addEventListener("click", () => { agentUI.allActivity = !agentUI.allActivity; renderAgent(); });
 document.querySelectorAll(".seg [data-hours]").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".seg [data-hours]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
@@ -1268,21 +1623,23 @@ $("resume-input").addEventListener("change", async e => {   // one resume for bo
   if (resumeText) saveAgentSettings({ resume_text: resumeText.slice(0, 20000) }, "");
 });
 $("agent-resume-input").addEventListener("change", async e => {
-  $("agent-file-label").textContent = e.target.files[0]?.name || "Upload PDF";
-  await uploadResume(e.target);
-  if (resumeText) await saveAgentSettings({ resume_text: resumeText.slice(0, 20000) }, "Resume saved. The next run writes AI kits from it.");
-  else $("agent-file-label").textContent = "Upload PDF";
+  const input = e.target, label = $("agent-file-label"), name = input.files[0]?.name || "Upload PDF";
+  label.innerHTML = '<span class="loading" style="padding:0"><span class="spinner"></span>Uploading…</span>'; input.disabled = true;
+  try {
+    await uploadResume(input);
+    if (resumeText) await saveAgentSettings({ resume_text: resumeText.slice(0, 20000) }, "Resume saved. The next run writes AI kits from it.");
+  } finally { input.disabled = false; label.textContent = resumeText ? name : "Upload PDF"; }
 });
 ["keywords", "exclude", "location"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter") search(); }));
 $("q").addEventListener("input", e => { view.q = e.target.value; renderJobs(); });
 $("f-track").addEventListener("change", e => { view.track = e.target.value; renderJobs(); });
+$("f-sort").value = view.sort;
+$("f-sort").addEventListener("change", e => { view.sort = e.target.value; store.set("sort", view.sort); renderJobs(); });
 for (const [id, key] of [["f-hot", "hot"], ["f-new", "onlyNew"]])
   $(id).addEventListener("click", e => { view[key] = !view[key]; e.currentTarget.setAttribute("aria-pressed", view[key]); renderJobs(); });
 $("results").addEventListener("click", e => {
   const fb = e.target.closest("[data-fb]");
   if (fb) return sendFeedback(+fb.dataset.fb, fb.dataset.signal);
-  const th = e.target.closest("th[data-sort]");
-  if (th && view.mode === "agent") { view.sort = view.sort === "posted" ? "score" : "posted"; renderJobs(); return; }
   const more = e.target.closest("[data-more]");
   if (more) {
     const row = $(`jd-${more.dataset.more}`);

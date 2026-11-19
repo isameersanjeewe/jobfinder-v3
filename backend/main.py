@@ -190,6 +190,7 @@ class AgentFilters(BaseModel):
     sponsors_only:     bool | None = None   # company must be a confirmed Strong/Moderate H-1B sponsor
     industries:        list[Phrase] | None = Field(default=None, max_length=10)
     exclude_companies: list[Phrase] | None = Field(default=None, max_length=100)
+    max_years:         int | None = Field(default=None, ge=0, le=30)   # Agent: skip postings asking more; 0 = no limit
 
 
 class AgentParams(BaseModel):
@@ -604,6 +605,15 @@ class LeadStatusParams(BaseModel):
     company: str = Short()
 
 
+class KitSkip(BaseModel):
+    url:    str = Field(min_length=1, max_length=2000)
+    reason: Literal["not_for_me", "too_senior", "company"] = "not_for_me"
+
+
+class HideCompany(BaseModel):
+    companies: list[Phrase] = Field(min_length=1, max_length=10)
+
+
 class ApprovalDecision(BaseModel):
     decision: Literal["accept", "reject"]
 
@@ -615,6 +625,88 @@ class WatchlistAdd(BaseModel):
 
 
 _agentmode_loaded: set[str] = set()
+_sync_pending: set[str] = set()       # users with a push queued or in flight
+_sync_dirty: set[str] = set()         # a write arrived while the push was in flight: push again
+_sync_failed: set[str] = set()        # last push failed: local SQLite is newer than the repo, never pull over it
+_sync_lock = threading.Lock()
+_sync_threads: set[threading.Thread] = set()
+_user_locks: dict[str, threading.Lock] = {}
+_PUSH_BACKOFF = 2   # seconds; tests set 0
+
+
+def _ulock(user_id: str) -> threading.Lock:
+    """One lock per user: a pull (GitHub GET + import over SQLite) and a write never interleave."""
+    with _sync_lock:
+        return _user_locks.setdefault(user_id, threading.Lock())
+
+
+def agent_writer(user_id: str = Depends(current_user)):
+    """Dependency for every /agentmode write: holds the user's lock for the request, after loading the durable
+    state once (Render wipes SQLite on deploy), so a concurrent /state pull can't import over this write."""
+    lock = _ulock(user_id)
+    lock.acquire()
+    try:
+        _agentmode_load(user_id)
+        yield user_id
+    finally:
+        lock.release()
+
+
+def _push_once(user_id: str) -> bool:
+    if not data_repo.enabled():
+        return True
+    with _ulock(user_id):   # consistent snapshot; the slow PUT happens outside the lock
+        data = store.export_agent_state(user_id)
+    for attempt in range(3):
+        if data_repo.write_json(agent_mode.REPO_PATH.format(user_id=user_id), data, f"Update agent state for {user_id}"):
+            return True
+        time.sleep(_PUSH_BACKOFF * (attempt + 1))
+    return False
+
+
+def _agentmode_sync_later(user_id: str) -> None:
+    """Push this user's agent state to the data repo in the background, so a click returns at SQLite speed
+    instead of waiting ~1-3 s on GitHub. Writes that arrive mid-push are coalesced into one more push. A push
+    that keeps failing leaves the user in _sync_failed: /state then retries the push instead of pulling the
+    older repo copy over the newer local state. Shutdown waits for in-flight pushes (see _drain_pushes)."""
+    with _sync_lock:
+        if user_id in _sync_pending:
+            _sync_dirty.add(user_id)
+            return
+        _sync_pending.add(user_id)
+
+    def push():
+        ok = False
+        try:
+            while True:
+                try:
+                    ok = _push_once(user_id)
+                except Exception:
+                    ok = False
+                    log.exception("agent state sync failed")
+                with _sync_lock:
+                    if user_id not in _sync_dirty:
+                        (_sync_failed.discard if ok else _sync_failed.add)(user_id)
+                        if not ok:
+                            log.warning("agent state for %s not pushed; will retry on the next /state", user_id)
+                        return
+                    _sync_dirty.discard(user_id)
+        finally:
+            with _sync_lock:
+                _sync_pending.discard(user_id); _sync_dirty.discard(user_id)
+                _sync_threads.discard(threading.current_thread())
+    t = threading.Thread(target=push, daemon=True)
+    with _sync_lock:
+        _sync_threads.add(t)
+    t.start()
+
+
+@app.on_event("shutdown")
+def _drain_pushes():
+    """Render sends SIGTERM on deploy and then wipes the disk: finish queued pushes first (bounded)."""
+    deadline = time.time() + 25
+    for t in list(_sync_threads):
+        t.join(max(0, deadline - time.time()))
 
 
 def _agentmode_load(user_id: str) -> None:
@@ -625,27 +717,56 @@ def _agentmode_load(user_id: str) -> None:
         _agentmode_loaded.add(user_id)
 
 
+def _scoring_info(user_id: str, filters_json) -> dict:
+    """Maximum points per Match part and the HOT threshold for this user's profile (the UI's breakdown)."""
+    try:
+        if isinstance(filters_json, dict):
+            filters_json = json.dumps(filters_json)
+        sc = agent_mode.rules_for(user_id, filters_json)["scoring"]
+        ind = [t.get("points", 0) for t in sc.get("industry_priority", [])] + [sc.get("opportunistic_points", 0), 15]
+        return {"max": {"h1b": max(sc["h1b_points"].values()), "title": 25, "geo": 15, "industry": max(ind),
+                        "contact": max(list(sc.get("contact_points", {}).values()) or [10])},
+                "hot": sc.get("hot_threshold", 65)}
+    except Exception:
+        return {"max": {"h1b": 35, "title": 25, "geo": 15, "industry": 15, "contact": 10}, "hot": 65}
+
+
 @app.get("/agentmode/state")
 def agentmode_state(user_id: str = Depends(current_user)):
     """Everything the Agent tab shows: on-duty settings, Today brief, kits, activity, approvals, watchlist,
     per-lead statuses and the set of agent-surfaced URLs (for the "Agent" badge in both tabs)."""
-    if user_id not in _agentmode_running:
-        agent_mode.sync_from_repo(user_id)   # always: picks up kits written by scheduled runs
-        _agentmode_loaded.add(user_id)
-    st = agent_mode.public_state(user_id)
+    with _ulock(user_id):
+        with _sync_lock:
+            unpushed = user_id in _sync_pending or user_id in _sync_failed
+            retry = user_id in _sync_failed and user_id not in _sync_pending
+        if user_id not in _agentmode_running and not unpushed:
+            agent_mode.sync_from_repo(user_id)   # picks up kits written by scheduled runs (never over an unpushed write)
+            _agentmode_loaded.add(user_id)
+        st = agent_mode.public_state(user_id)
+    if retry:
+        _agentmode_sync_later(user_id)
     st["running"] = user_id in _agentmode_running
+    st["scoring"] = _scoring_info(user_id, (st.get("settings") or {}).get("filters"))
     return st
 
 
+_SKIP_KEYS = ("exclude_companies", "max_years")
+
+
 @app.post("/agentmode/settings")
-def agentmode_settings(p: AgentModeSettings, user_id: str = Depends(current_user)):
-    _agentmode_load(user_id)
+def agentmode_settings(p: AgentModeSettings, user_id: str = Depends(agent_writer)):
     fields = {k: v for k, v in p.model_dump(exclude={"filters", "clear_filters"}).items() if v is not None}
-    if p.clear_filters:
-        fields["filters"] = ""
-    elif p.filters is not None:
-        fields["filters"] = json.dumps(p.filters.model_dump(exclude_none=True))
     cur = store.get_agent_settings(user_id)
+    cur_f = agent_mode._json_or_none(cur.get("filters")) or {}
+    # skip rules (hidden companies, max years) live in the same filters blob but are edited on their own: saving
+    # targets or going back to the profile keeps them; a key the request leaves out keeps its saved value
+    keep = {k: cur_f[k] for k in _SKIP_KEYS if cur_f.get(k)}
+    if p.clear_filters:
+        fields["filters"] = json.dumps(keep) if keep else ""
+    elif p.filters is not None:
+        new_f = {**cur_f, **p.filters.model_dump(exclude_none=True)}
+        new_f = {k: v for k, v in new_f.items() if not (k in _SKIP_KEYS and not v)}   # [] / 0 clears a skip rule
+        fields["filters"] = json.dumps(new_f) if new_f else ""
     if fields.get("enabled") and not cur["enabled"]:
         fields["next_run"] = ""   # due immediately once switched on
     if fields.get("enabled") is False:
@@ -655,14 +776,53 @@ def agentmode_settings(p: AgentModeSettings, user_id: str = Depends(current_user
     snap.pop("researched", None)
     fields["rules_snapshot"] = json.dumps(snap)
     store.save_agent_settings(user_id, **fields)
-    agent_mode.sync_to_repo(user_id)
-    return agent_mode.public_state(user_id)["settings"]
+    pruned = agent_mode.prune_kits(user_id, snap) if "filters" in fields else 0
+    if pruned and user_id not in _agentmode_running:
+        agent_mode.refill(user_id, min(pruned, 3))   # a stricter rule shouldn't leave Today's picks empty
+    _agentmode_sync_later(user_id)
+    out = agent_mode.public_state(user_id)["settings"]
+    out["pruned"] = pruned
+    return out
+
+
+def _snapshot_rules(user_id: str) -> None:
+    snap = agent_mode.rules_for(user_id, store.get_agent_settings(user_id).get("filters"))
+    snap.pop("researched", None)
+    store.save_agent_settings(user_id, rules_snapshot=json.dumps(snap))
+
+
+@app.post("/agentmode/kits/skip")
+def agentmode_skip(p: KitSkip, user_id: str = Depends(agent_writer)):
+    """"Not for me" on a pick: marks it Skipped, removes the kit (with reason "company": every kit from that
+    company, which is also hidden from future runs), and returns replacement kits from the saved leads."""
+    with _agentmode_lock:
+        if user_id in _agentmode_running:
+            return JSONResponse({"error": "the agent is running; try again when it finishes"}, status_code=429)
+    res = agent_mode.skip_kit(user_id, p.url, p.reason)
+    if res is None:
+        return JSONResponse({"error": "no such apply kit"}, status_code=404)
+    if p.reason == "company":
+        _snapshot_rules(user_id)
+    _agentmode_sync_later(user_id)
+    return res
+
+
+@app.post("/agentmode/hide-company")
+def agentmode_hide_company(p: HideCompany, user_id: str = Depends(agent_writer)):
+    """Never pick or suggest this company (Suggestions' "Hide" button). Replacement kits come back like a skip."""
+    with _agentmode_lock:
+        if user_id in _agentmode_running:
+            return JSONResponse({"error": "the agent is running; try again when it finishes"}, status_code=429)
+    res = agent_mode.hide_company(user_id, p.companies)
+    res["added"] = agent_mode.refill(user_id, min(len(res["removed"]), 3))
+    _snapshot_rules(user_id)
+    _agentmode_sync_later(user_id)
+    return res
 
 
 @app.post("/agentmode/run")
-def agentmode_run(p: AgentModeRun, user_id: str = Depends(current_user)):
+def agentmode_run(p: AgentModeRun, user_id: str = Depends(agent_writer)):
     """Run one agent cycle now (drafts only; never applies or sends anything)."""
-    _agentmode_load(user_id)
     with _agentmode_lock:
         if user_id in _agentmode_running:
             return JSONResponse({"error": "an agent cycle is already running"}, status_code=429)
@@ -671,7 +831,7 @@ def agentmode_run(p: AgentModeRun, user_id: str = Depends(current_user)):
     def work():
         try:
             res = agent_mode.run_cycle(user_id)
-            agent_mode.sync_to_repo(user_id)
+            _agentmode_sync_later(user_id)   # queued with any click-time pushes, so two pushes never race
             return res
         finally:
             _agentmode_running.discard(user_id)
@@ -694,54 +854,49 @@ def agentmode_run(p: AgentModeRun, user_id: str = Depends(current_user)):
 
 
 @app.post("/agentmode/status")
-def agentmode_status(p: LeadStatusParams, user_id: str = Depends(current_user)):
+def agentmode_status(p: LeadStatusParams, user_id: str = Depends(agent_writer)):
     """Per-lead status (New/Applied/Interview/Rejected/Skipped), shared by both tabs. Feeds the same memory as
     thumbs (store.feedback_signal_counts): Applied/Interview count as up, Skipped as down."""
-    _agentmode_load(user_id)
     res = store.set_lead_status(user_id, p.url, p.status, p.company, p.title)
-    agent_mode.sync_to_repo(user_id)
+    _agentmode_sync_later(user_id)
     return res
 
 
 @app.post("/agentmode/approvals/accept-all")
-def agentmode_accept_all(user_id: str = Depends(current_user)):
+def agentmode_accept_all(user_id: str = Depends(agent_writer)):
     """One click for the whole pending batch (owner decision 8: the first watchlist is approved as one batch)."""
-    _agentmode_load(user_id)
     # watchlist additions only: anything that changes the agent's plan still needs a one-by-one decision
     done = [r for a in store.list_approvals(user_id, "pending")
             if a["kind"] == "watchlist_add" and (r := store.decide_approval(user_id, a["id"], True))]
     if done:
         store.add_activity(user_id, "", "approval", "You accepted adding " +
                            ", ".join(r["payload"].get("company", "?") for r in done) + " to the watchlist.")
-        agent_mode.sync_to_repo(user_id)
+        _agentmode_sync_later(user_id)
     return {"accepted": len(done)}
 
 
 @app.post("/agentmode/approvals/{approval_id}")
-def agentmode_decide(approval_id: Annotated[int, Path(ge=1)], p: ApprovalDecision, user_id: str = Depends(current_user)):
-    _agentmode_load(user_id)
+def agentmode_decide(approval_id: Annotated[int, Path(ge=1)], p: ApprovalDecision, user_id: str = Depends(agent_writer)):
     res = store.decide_approval(user_id, approval_id, p.decision == "accept")
     if not res:
         return JSONResponse({"error": "no such pending approval"}, status_code=404)
     store.add_activity(user_id, "", "approval", f"You {res['status']} adding {res['payload'].get('company', '?')} to the watchlist.")
-    agent_mode.sync_to_repo(user_id)
+    _agentmode_sync_later(user_id)
     return res
 
 
 @app.post("/agentmode/watchlist")
-def agentmode_watch_add(p: WatchlistAdd, user_id: str = Depends(current_user)):
-    _agentmode_load(user_id)
+def agentmode_watch_add(p: WatchlistAdd, user_id: str = Depends(agent_writer)):
     store.add_watchlist(user_id, p.company, p.ats, p.slug, "manual")
-    agent_mode.sync_to_repo(user_id)
+    _agentmode_sync_later(user_id)
     return {"watchlist": store.list_watchlist(user_id)}
 
 
 @app.delete("/agentmode/watchlist/{company}")
-def agentmode_watch_remove(company: Annotated[str, Path(min_length=1, max_length=100)], user_id: str = Depends(current_user)):
-    _agentmode_load(user_id)
+def agentmode_watch_remove(company: Annotated[str, Path(min_length=1, max_length=100)], user_id: str = Depends(agent_writer)):
     if not store.remove_watchlist(user_id, company):
         return JSONResponse({"error": "not on your watchlist"}, status_code=404)
-    agent_mode.sync_to_repo(user_id)
+    _agentmode_sync_later(user_id)
     return {"watchlist": store.list_watchlist(user_id)}
 
 
