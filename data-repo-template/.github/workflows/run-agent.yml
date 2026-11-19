@@ -62,13 +62,28 @@ jobs:
           HOURS: ${{ inputs.hours }}
           APP_BACKEND_DIR: ${{ github.workspace }}/app-src/backend
         run: python scripts/run_for_user.py
-      - name: Commit updated leads/seen JSON back into this repo
+      - name: Commit updated leads/seen JSON back into this repo (rebase-free retry)
         working-directory: data-repo
         env:
           GH_USER_ID: ${{ inputs.user_id }}
         run: |
           git config user.name "jobfinder-data-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add "data/${GH_USER_ID}/leads.json" "data/${GH_USER_ID}/seen.json"
-          git diff --cached --quiet && echo "no changes" || git commit -m "Update leads for ${GH_USER_ID} ($(date -u +%Y-%m-%dT%H:%MZ))"
-          git push
+          # Render writes other files (agent.json, _users.json, _company_signals.json) through the API while this
+          # multi-minute run is going, so a plain push is often rejected. Only this job writes this user's
+          # leads/seen, so: keep our two files, start each attempt from the latest remote, copy them over, push.
+          files="data/${GH_USER_ID}/leads.json data/${GH_USER_ID}/seen.json"
+          stash=$(mktemp -d)
+          for f in $files; do python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"; cp "$f" "$stash/$(basename "$f")"; done
+          for i in 1 2 3 4 5; do
+            git fetch -q origin "${GITHUB_REF_NAME}" && git reset -q --hard "origin/${GITHUB_REF_NAME}"
+            mkdir -p "data/${GH_USER_ID}"
+            for f in $files; do cp "$stash/$(basename "$f")" "$f"; done
+            git add $files
+            git diff --cached --quiet && { echo "no changes"; exit 0; }
+            git commit -q -m "Update leads for ${GH_USER_ID} ($(date -u +%Y-%m-%dT%H:%MZ))"
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
+            sleep $((i * 5))
+          done
+          echo "push failed after 5 attempts" >&2
+          exit 1
