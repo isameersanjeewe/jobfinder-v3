@@ -459,8 +459,14 @@ main { padding:20px 24px; min-width:0; }
           <button class="btn-sm" id="watch-add-btn" type="button">Add</button></div>
         <p class="hint" style="margin-top:6px">Checked every run for fresh postings on their public Greenhouse/Lever/Ashby job boards.</p>
       </div>
-      <details class="card">
+      <details class="card" id="notes-card">
         <summary>Notes and resume</summary>
+        <label>Resume (PDF) <span class="hint">the AI writes kits only from facts in it</span></label>
+        <div class="file-zone">
+          <input type="file" accept=".pdf,application/pdf" id="agent-resume-input" aria-label="Upload resume PDF for the agent">
+          <strong id="agent-file-label">Upload PDF</strong>
+          <span class="hint">Saved for the agent · max 5 MB</span>
+        </div>
         <label for="agent-notes">Notes for the agent <span class="hint">(plain sentences)</span></label>
         <textarea id="agent-notes" rows="3" maxlength="2000" placeholder="Prefer healthcare and data platforms; avoid ad tech."></textarea>
         <p class="hint" id="agent-resume-hint" style="margin-top:6px"></p>
@@ -974,7 +980,9 @@ function renderAgent() {
   const b = st.brief || {};
   $("brief-date").textContent = b.date || "";
   const fu = (b.follow_ups || []).map(f => `<li><b>${esc(f.title)}</b> at ${esc(f.company)}<div class="meta">Applied ${esc(f.days)} days ago, no change: time for a follow-up note.</div></li>`).join("");
-  $("brief").innerHTML = `<div class="brief-head">${esc(b.headline || "Nothing yet. Click Run now.")}</div>
+  const needResume = s.llm && !s.has_resume;
+  $("brief").innerHTML = `${needResume ? `<div class="flag-box" style="margin:0 0 10px"><b>Add your resume</b> so the AI can write tailored kits (until then kits are templates). <button class="btn-sm" type="button" data-open-notes style="margin-left:6px">Upload resume</button></div>` : ""}
+    <div class="brief-head">${esc(b.headline || "Nothing yet. Click Run now.")}</div>
     ${fu ? `<div class="section-label" style="margin-top:12px">Follow-ups due</div><ul class="alist">${fu}</ul>` : ""}`;
 
   const kits = st.kits || [];
@@ -1066,6 +1074,7 @@ async function runAgentNow() {
 }
 
 $("tab-agent").addEventListener("click", async e => {
+  if (e.target.closest("[data-open-notes]")) { $("notes-card").open = true; $("notes-card").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
   if (e.target.closest("[data-retry-agent]")) {
     $("brief").innerHTML = '<div class="loading"><div class="spinner"></div>Loading…</div>';
     if (await loadAgentState(6)) { checkConnection(1); loadSavedLeads(); }
@@ -1205,7 +1214,16 @@ $("search-btn").addEventListener("click", search);
 $("csv-btn").addEventListener("click", downloadCSV);
 $("sheet-btn").addEventListener("click", sendToSheet);
 document.querySelectorAll("[data-leads]").forEach(b => b.addEventListener("click", () => downloadLeads(b.dataset.leads)));
-$("resume-input").addEventListener("change", e => uploadResume(e.target));
+$("resume-input").addEventListener("change", async e => {   // one resume for both tabs
+  await uploadResume(e.target);
+  if (resumeText) saveAgentSettings({ resume_text: resumeText.slice(0, 20000) }, "");
+});
+$("agent-resume-input").addEventListener("change", async e => {
+  $("agent-file-label").textContent = e.target.files[0]?.name || "Upload PDF";
+  await uploadResume(e.target);
+  if (resumeText) await saveAgentSettings({ resume_text: resumeText.slice(0, 20000) }, "Resume saved. The next run writes AI kits from it.");
+  else $("agent-file-label").textContent = "Upload PDF";
+});
 ["keywords", "exclude", "location"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter") search(); }));
 $("q").addEventListener("input", e => { view.q = e.target.value; renderJobs(); });
 $("f-track").addEventListener("change", e => { view.track = e.target.value; renderJobs(); });
