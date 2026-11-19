@@ -14,7 +14,7 @@
   --duty:#7c3aed; --duty-bg:#f1eafe; --duty-ink:#ffffff;
   --mono:ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --display:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --radius:12px; --radius-sm:8px;
+  --radius:12px; --radius-sm:8px; --ctl:40px;
   --shadow-sm:0 1px 2px rgba(23,23,20,.05), 0 1px 1px rgba(23,23,20,.04);
   --shadow-md:0 6px 16px rgba(23,23,20,.07), 0 2px 4px rgba(23,23,20,.05);
 }
@@ -30,18 +30,17 @@
 body { background:var(--bg); color:var(--ink); font-family:var(--display); font-size:14px; line-height:1.45; min-height:100vh; -webkit-font-smoothing:antialiased; }
 button, input, select, textarea { font:inherit; color:inherit; }
 
-nav { display:flex; align-items:center; justify-content:space-between; padding:13px 26px; border-bottom:1px solid var(--border); background:var(--surface); gap:14px; flex-wrap:wrap; position:sticky; top:0; z-index:5; box-shadow:var(--shadow-sm); }
+.topbar { position:sticky; top:0; z-index:5; box-shadow:var(--shadow-sm); }
+nav { display:flex; align-items:center; justify-content:space-between; padding:12px 24px; border-bottom:1px solid var(--border); background:var(--surface); gap:14px; flex-wrap:wrap; }
 .wordmark { font-family:var(--display); font-size:19px; font-weight:700; letter-spacing:-0.4px; }
 .wordmark em { color:var(--agent); font-style:normal; font-weight:700; }
 .nav-right { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .conn { font-size:11.5px; color:var(--muted); display:flex; align-items:center; gap:6px; font-family:var(--mono); }
 .dot { width:7px; height:7px; border-radius:50%; background:var(--border); transition:background .2s; }
 .dot.ok { background:var(--green); box-shadow:0 0 0 3px var(--green-bg); } .dot.bad { background:var(--red); box-shadow:0 0 0 3px var(--red-bg); }
-.usage-pill { display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10.5px; padding:4px 10px; border-radius:20px; border:1px solid var(--border); white-space:nowrap; color:var(--muted); background:var(--soft); }
-.usage-pill b { color:var(--ink); font-weight:600; }
 
-.shell { display:grid; grid-template-columns:320px minmax(0,1fr); min-height:calc(100vh - 55px); }
-aside { border-right:1px solid var(--border); background:var(--surface); padding:22px 20px; display:flex; flex-direction:column; gap:18px; }
+.shell { display:grid; grid-template-columns:340px minmax(0,1fr); min-height:calc(100vh - 110px); }
+aside { border-right:1px solid var(--border); background:var(--surface); padding:20px; display:flex; flex-direction:column; gap:14px; min-width:0; }
 .card { border:1px solid var(--border); border-radius:var(--radius); padding:16px; background:var(--soft); }
 .card.agent { border-color:var(--agent); background:var(--agent-bg); }
 .section-label { font-size:11px; letter-spacing:0.07em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; display:flex; justify-content:space-between; font-weight:700; }
@@ -54,7 +53,8 @@ textarea { resize:vertical; min-height:56px; line-height:1.5; }
 .badge.profile { background:var(--border); color:var(--muted); }
 .btn-row { display:flex; gap:8px; margin-top:14px; }
 .btn-row > * { flex:1; }
-input[type="text"], input[type="password"], select, textarea { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; font-size:13.5px; outline:none; transition:border-color .15s, box-shadow .15s; }
+input[type="text"], input[type="password"], select, textarea { width:100%; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:9px 12px; font-size:14px; outline:none; transition:border-color .15s, box-shadow .15s; }
+input[type="text"], input[type="password"], select { height:var(--ctl); }
 input[type="text"]:hover, input[type="password"]:hover, select:hover, textarea:hover { border-color:var(--muted); }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline:2px solid var(--agent); outline-offset:1px; }
 label { display:block; font-size:12.5px; color:var(--muted); margin:12px 0 5px; font-weight:500; }
@@ -75,14 +75,18 @@ label:first-of-type { margin-top:0; }
 .file-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; }
 .file-zone strong { display:block; font-size:12.5px; margin-bottom:2px; }
 
-.btn { width:100%; padding:12px; border:none; border-radius:var(--radius-sm); font-family:var(--display); font-size:14.5px; font-weight:600; cursor:pointer; transition:filter .15s, transform .1s, box-shadow .15s; background:var(--ink); color:var(--bg); box-shadow:var(--shadow-sm); }
+.btn { width:100%; min-height:44px; padding:10px 14px; border:none; border-radius:var(--radius-sm); font-family:var(--display); font-size:14.5px; font-weight:600; cursor:pointer; transition:filter .15s, transform .1s, box-shadow .15s; background:var(--ink); color:var(--bg); box-shadow:var(--shadow-sm); }
 .btn:hover:not(:disabled) { filter:brightness(1.12); box-shadow:var(--shadow-md); }
 .btn:active:not(:disabled) { transform:translateY(1px); }
 .btn:disabled { opacity:.45; cursor:not-allowed; }
 .btn.agent { background:var(--agent); color:#06241d; }
-.row { display:flex; gap:8px; align-items:stretch; }
-.row > select { width:112px; flex-shrink:0; }
+.row { display:flex; gap:8px; align-items:stretch; min-width:0; }
+.row > input { flex:1; }
 .row > .btn { flex:1; white-space:nowrap; }
+.stack { display:flex; flex-direction:column; gap:8px; }
+.seg { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:3px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); }
+.seg button { min-height:34px; border:none; border-radius:6px; background:none; cursor:pointer; font-size:13px; color:var(--muted); font-weight:600; }
+.seg button[aria-pressed="true"] { background:var(--agent-bg); color:var(--agent); }
 details summary { cursor:pointer; font-size:13px; color:var(--ink); font-weight:600; list-style:none; }
 details summary::-webkit-details-marker { display:none; }
 details summary::before { content:"▸"; display:inline-block; margin-right:7px; font-size:10px; color:var(--muted); transition:transform .15s; }
@@ -93,10 +97,12 @@ main { padding:20px 24px; min-width:0; }
 .toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
 .result-count { font-size:12.5px; color:var(--muted); }
 .result-count b { color:var(--ink); font-weight:700; }
-.btn-sm { padding:8px 13px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:12.5px; color:var(--muted); cursor:pointer; white-space:nowrap; font-weight:500; transition:border-color .15s, color .15s, background .15s; }
+.btn-sm { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:0 14px; text-decoration:none; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:12.5px; color:var(--muted); cursor:pointer; white-space:nowrap; font-weight:500; transition:border-color .15s, color .15s, background .15s; }
 .btn-sm:hover:not(:disabled) { border-color:var(--ink); color:var(--ink); background:var(--soft); }
 .btn-sm:disabled { opacity:.4; cursor:not-allowed; }
 .btn-sm[aria-pressed="true"] { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+.btn-sm.primary { background:var(--duty); border-color:var(--duty); color:var(--duty-ink); font-weight:600; }
+.btn-sm.primary:hover:not(:disabled) { filter:brightness(1.1); background:var(--duty); color:var(--duty-ink); }
 .filters { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
 .filters input { width:240px; }
 .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
@@ -105,7 +111,7 @@ main { padding:20px 24px; min-width:0; }
 
 .table-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-sm); }
 .job-table { width:100%; border-collapse:collapse; min-width:720px; }
-.job-table th { text-align:left; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:11px 10px; border-bottom:1px solid var(--border); font-weight:600; white-space:nowrap; background:var(--soft); position:sticky; top:0; }
+.job-table th { text-align:left; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:11px 10px; border-bottom:1px solid var(--border); font-weight:600; white-space:nowrap; background:var(--soft); }
 .job-table th.sortable { cursor:pointer; }
 .job-table th.sortable:hover { color:var(--ink); }
 .job-row { border-bottom:1px solid var(--border); transition:background .1s; }
@@ -131,11 +137,11 @@ main { padding:20px 24px; min-width:0; }
 .bar > div { height:100%; border-radius:3px; }
 
 .fb-wrap { display:flex; gap:4px; align-items:center; justify-content:flex-end; }
-.fb-btn { width:28px; height:28px; border:1px solid var(--border); border-radius:var(--radius-sm); background:transparent; cursor:pointer; font-size:12px; transition:border-color .15s, background .15s; }
+.fb-btn { width:36px; height:36px; flex-shrink:0; border:1px solid var(--border); border-radius:var(--radius-sm); background:transparent; cursor:pointer; font-size:12px; transition:border-color .15s, background .15s; }
 .fb-btn:hover { border-color:var(--ink); background:var(--soft); }
 .fb-btn[aria-pressed="true"].up   { background:var(--green-bg); border-color:var(--green); }
 .fb-btn[aria-pressed="true"].down { background:var(--red-bg);   border-color:var(--red); }
-.btn-apply { padding:6px 13px; background:var(--ink); color:var(--bg); border-radius:var(--radius-sm); font-family:var(--display); font-size:11px; font-weight:600; text-decoration:none; white-space:nowrap; transition:filter .15s; }
+.btn-apply { display:inline-flex; align-items:center; min-height:36px; padding:0 14px; background:var(--ink); color:var(--bg); border-radius:var(--radius-sm); font-family:var(--display); font-size:11px; font-weight:600; text-decoration:none; white-space:nowrap; transition:filter .15s; }
 .btn-apply:hover { filter:brightness(1.15); }
 
 .job-details td { padding:4px 14px 14px; background:var(--soft); }
@@ -171,17 +177,17 @@ main { padding:20px 24px; min-width:0; }
 .tab[aria-selected="true"][data-tab="search"] { border-bottom-color:var(--ink); }
 .tab[aria-selected="true"][data-tab="agent"] { border-bottom-color:var(--duty); }
 .tab[data-tab="agent"] b { color:var(--duty); }
-.agent-tab { padding:20px 24px; display:flex; flex-direction:column; gap:16px; }
+.agent-tab { padding:20px 24px; display:flex; flex-direction:column; gap:16px; max-width:1320px; margin:0 auto; width:100%; }
 .card.duty { border-color:var(--duty); background:var(--duty-bg); display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; }
 .duty-main { display:flex; align-items:center; gap:12px; }
 .duty-title { font-size:16px; font-weight:700; color:var(--duty); }
 .duty-controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.duty-controls select { width:auto; }
-.duty-toggle { width:auto; border:1px solid var(--duty); border-radius:var(--radius-sm); padding:8px 12px; background:var(--surface); }
+.duty-controls select { width:auto; min-width:130px; }
+.duty-toggle { width:auto; height:var(--ctl); border:1px solid var(--duty); border-radius:var(--radius-sm); padding:0 12px; background:var(--surface); }
 .duty-toggle[aria-pressed="true"] .switch { background:var(--duty); }
 .dot.on { background:var(--duty); box-shadow:0 0 0 3px var(--duty-bg), 0 0 0 4px var(--duty); }
-.btn.duty-btn { width:auto; padding:9px 16px; background:var(--duty); color:var(--duty-ink); }
-.agent-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:16px; align-items:start; }
+.btn.duty-btn { width:auto; min-height:var(--ctl); padding:0 20px; background:var(--duty); color:var(--duty-ink); }
+.agent-grid { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr); gap:16px; align-items:start; }
 .agent-col { display:flex; flex-direction:column; gap:16px; min-width:0; }
 .agent-tab .card { background:var(--surface); }
 .agent-tab .card.duty { background:var(--duty-bg); }
@@ -192,23 +198,46 @@ main { padding:20px 24px; min-width:0; }
 .alist .meta { font-size:11.5px; color:var(--muted); margin-top:3px; }
 .kit-item { cursor:pointer; }
 .kit-row { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
-.kit-detail h4 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:14px 0 6px; }
+.kit-detail h4 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:16px 0 8px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.kit-title { font-size:16px; font-weight:700; line-height:1.3; }
+.kit-sub { font-size:12.5px; color:var(--muted); margin:2px 0 10px; }
 .kit-detail ul { padding-left:18px; display:flex; flex-direction:column; gap:4px; font-size:13px; }
-.kit-detail .qa { border-top:1px solid var(--border); padding:8px 0; font-size:13px; }
+.kit-detail .qa { border-top:1px solid var(--border); padding:10px 0; font-size:13px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; align-items:start; }
 .kit-detail .qa b { display:block; margin-bottom:3px; }
+.kit-detail .qa .btn-sm { grid-row:1 / span 2; grid-column:2; }
 .flag-box { background:var(--amber-bg); color:var(--amber); border-radius:var(--radius-sm); padding:8px 10px; font-size:12px; margin-top:8px; }
 .badge-agent { display:inline-block; font-size:9.5px; letter-spacing:.06em; padding:2px 7px; border-radius:20px; background:var(--duty-bg); color:var(--duty); border:1px solid var(--duty); text-transform:uppercase; font-weight:700; margin-left:6px; vertical-align:middle; }
-.status-sel { width:auto !important; padding:4px 6px !important; font-size:11.5px !important; }
+.status-sel { width:auto !important; height:36px !important; padding:0 8px !important; font-size:12.5px !important; flex-shrink:0; }
 .act-kind { font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--duty); margin-right:6px; }
 .watch-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
-.watch-chips .chip button { background:none; border:none; cursor:pointer; color:var(--muted); margin-left:4px; }
-.actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+.watch-chips .chip, .loc-chips .chip { display:inline-flex; align-items:center; gap:2px; font-size:12.5px; padding:4px 4px 4px 12px; }
+.watch-chips .chip button, .loc-chips .chip button { width:26px; height:26px; border-radius:50%; background:none; border:none; cursor:pointer; color:var(--muted); font-size:15px; }
+.watch-chips .chip button:hover, .loc-chips .chip button:hover { background:var(--soft); color:var(--ink); }
+.loc-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.card-title-row { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
+.card-title-row .section-label { margin-bottom:0; }
+.loading { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; padding:6px 0; }
+.loading .spinner { width:16px; height:16px; margin:0; border-width:2px; }
+.more-btn { margin-top:8px; width:100%; }
+.alist li.appr { display:flex; align-items:center; gap:10px; }
+.appr-text { flex:1; min-width:0; }
+.appr-btns { display:flex; gap:6px; flex-shrink:0; }
+.appr-btns .btn-sm { width:40px; padding:0; font-size:15px; }
+.appr-btns [data-decision="accept"]:hover { border-color:var(--green); color:var(--green); background:var(--green-bg); }
+.appr-btns [data-decision="reject"]:hover { border-color:var(--red); color:var(--red); background:var(--red-bg); }
+.actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
 
+@media (max-width:980px) { .agent-grid { grid-template-columns:minmax(0,1fr); } .shell { grid-template-columns:300px minmax(0,1fr); } }
 @media (max-width:820px) {
   .agent-grid { grid-template-columns:minmax(0,1fr); }
+  .card.duty { flex-direction:column; align-items:stretch; }
+  .duty-controls { display:grid; grid-template-columns:1fr 1fr; }
+  .duty-controls .btn.duty-btn { grid-column:1 / -1; width:100%; }
+  .duty-controls select, .duty-toggle { width:100%; }
+  .toolbar .row { width:100%; } .toolbar .row .btn-sm { flex:1 1 calc(50% - 8px); }
+  .session-info span { display:none; }
   .agent-tab, .tabs { padding-left:16px; padding-right:16px; }
   .shell { grid-template-columns:minmax(0,1fr); }
-  .usage-pill { display:none; }
   aside { min-width:0; }
   aside { border-right:none; border-bottom:1px solid var(--border); }
   nav, main { padding-left:16px; padding-right:16px; }
@@ -232,12 +261,10 @@ main { padding:20px 24px; min-width:0; }
 </div>
 
 <div id="app" hidden>
+<div class="topbar">
 <nav>
   <div class="wordmark">Job<em>Finder</em></div>
   <div class="nav-right">
-    <div class="usage-pill">JSearch <b id="u-jsearch">—</b></div>
-    <div class="usage-pill">Adzuna <b id="u-adzuna">—</b></div>
-    <div class="usage-pill">Claude <b id="u-claude">—</b></div>
     <div class="session-info"><span id="session-user-label"></span><button class="btn-sm" id="logout-btn" type="button" style="padding:3px 9px; font-size:10.5px">Sign out</button></div>
     <div class="conn" title="Backend connection"><span class="dot" id="conn-dot"></span><span id="conn-text">connecting…</span></div>
   </div>
@@ -246,19 +273,21 @@ main { padding:20px 24px; min-width:0; }
   <button class="tab" type="button" role="tab" data-tab="search" aria-selected="true" aria-controls="tab-search"><b>Search</b><span>You drive</span></button>
   <button class="tab" type="button" role="tab" data-tab="agent" aria-selected="false" aria-controls="tab-agent"><b>✦ Agent</b><span>Works for you</span></button>
 </div>
+</div>
 
 <section id="tab-search" role="tabpanel">
 <div class="shell">
   <aside>
     <div class="card agent">
       <div class="section-label"><span>Full Search</span><span>recommended</span></div>
-      <p class="hint" style="margin-bottom:10px">Searches your profile's boards, checks H1B sponsorship, scores and saves only new, eligible leads. A thorough multi-source run, not an autonomous agent -- it runs exactly when you click it.</p>
-      <div class="row">
+      <p class="hint" style="margin-bottom:12px">Searches all boards for your titles and places, checks H-1B sponsorship, and saves only new, eligible leads. Runs when you click it (several minutes).</p>
+      <div class="stack">
+        <div class="seg" role="group" aria-label="Posted within">
+          <button type="button" data-hours="24" aria-pressed="true">Last 24 hours</button>
+          <button type="button" data-hours="168" aria-pressed="false">Last 7 days</button>
+        </div>
+        <input type="hidden" id="agent-hours" value="24">
         <button class="btn agent" id="agent-btn" type="button">✦ Run Full Search</button>
-        <select id="agent-hours" title="Recency window" aria-label="Recency window">
-          <option value="24">24 hours</option>
-          <option value="168">7 days</option>
-        </select>
       </div>
       <p class="hint" id="agent-status" style="margin-top:8px" aria-live="polite"></p>
     </div>
@@ -269,6 +298,7 @@ main { padding:20px 24px; min-width:0; }
       <input type="text" id="f-titles" placeholder="Product Manager, Data Engineer…">
       <label for="f-locations">Locations <span class="hint">(one per line, "City, ST")</span></label>
       <textarea id="f-locations" rows="2" placeholder="Austin, TX&#10;Seattle, WA"></textarea>
+      <p class="hint" style="margin-top:4px">Only these places (plus remote, if ticked). A city, a state, or "City, ST".</p>
       <label class="check"><input type="checkbox" id="f-remote"> Include remote (US)</label>
       <label for="f-visa">Work authorization</label>
       <select id="f-visa">
@@ -286,7 +316,7 @@ main { padding:20px 24px; min-width:0; }
         <button class="btn-sm" id="f-save" type="button">Save filters</button>
         <button class="btn-sm" id="f-reset" type="button">Use profile</button>
       </div>
-      <p class="hint" style="margin-top:6px">Saved only in this browser and sent with each search run.</p>
+      <p class="hint" style="margin-top:6px">Saved in this browser and used by every Full Search. The Agent has its own targets in the Agent tab.</p>
     </details>
 
     <div class="card">
@@ -390,41 +420,56 @@ main { padding:20px 24px; min-width:0; }
       <button class="btn duty-btn" id="duty-run" type="button">Run now</button>
     </div>
   </div>
-  <p class="hint">The agent picks today's best leads from your saved Full Search results and your watchlist, and writes an apply kit for each. It never applies or sends anything: you review, copy and submit.</p>
+  <p class="hint">Each run picks today's best leads from your saved Full Search results and your watchlist, and writes an apply kit for each. It never applies or sends anything: you review, copy and submit.</p>
   <div class="agent-grid">
     <div class="agent-col">
       <div class="card">
-        <div class="section-label"><span>Today brief</span><span id="brief-date"></span></div>
-        <div id="brief"><p class="hint">No brief yet. Click Run now.</p></div>
-      </div>
-      <div class="card">
-        <div class="section-label"><span>Apply kits</span><span id="kits-count"></span></div>
+        <div class="card-title-row"><div class="section-label"><span>Today</span></div><span class="hint" id="brief-date"></span></div>
+        <div id="brief"><div class="loading"><div class="spinner"></div>Loading…</div></div>
+        <div class="section-label" style="margin-top:14px"><span>Apply kits</span><span id="kits-count"></span></div>
         <ul class="alist" id="kits"></ul>
-        <div class="kit-detail" id="kit-detail"></div>
       </div>
+      <div class="card kit-detail" id="kit-detail" hidden></div>
     </div>
     <div class="agent-col">
-      <div class="card">
-        <div class="section-label"><span>Approvals inbox</span><span id="approvals-count"></span></div>
+      <div class="card" id="approvals-card">
+        <div class="card-title-row"><div class="section-label"><span>Approvals</span></div>
+          <button class="btn-sm primary" id="approve-all" type="button" hidden>Accept all</button></div>
         <ul class="alist" id="approvals"></ul>
+      </div>
+      <div class="card" id="targets-card">
+        <div class="card-title-row"><div class="section-label"><span>Where and what to look for</span></div><span class="badge profile" id="t-badge">profile</span></div>
+        <label>Locations</label>
+        <div class="loc-chips" id="t-locs"></div>
+        <div class="row"><input type="text" id="t-loc-add" placeholder="City, ST or a state" maxlength="80" aria-label="Add a location">
+          <button class="btn-sm" id="t-loc-add-btn" type="button">Add</button></div>
+        <label class="check"><input type="checkbox" id="t-remote"> Include US remote roles</label>
+        <label for="t-titles">Job titles <span class="hint">(comma-separated)</span></label>
+        <textarea id="t-titles" rows="2" maxlength="1200"></textarea>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn-sm primary" id="t-save" type="button">Save targets</button>
+          <button class="btn-sm" id="t-reset" type="button">Use profile</button>
+        </div>
+        <p class="hint" style="margin-top:8px">The agent only picks jobs in these places. A "remote" job that is listed in another state is skipped.</p>
       </div>
       <div class="card">
         <div class="section-label">Watchlist</div>
         <div class="watch-chips" id="watchlist"></div>
         <div class="row"><input type="text" id="watch-add" placeholder="Company name" maxlength="100" aria-label="Add a company to the watchlist">
           <button class="btn-sm" id="watch-add-btn" type="button">Add</button></div>
-        <p class="hint" style="margin-top:6px">Polled each run via public Greenhouse/Lever/Ashby boards.</p>
+        <p class="hint" style="margin-top:6px">Checked every run for fresh postings on their public Greenhouse/Lever/Ashby job boards.</p>
       </div>
       <details class="card">
-        <summary>Preferences</summary>
+        <summary>Notes and resume</summary>
         <label for="agent-notes">Notes for the agent <span class="hint">(plain sentences)</span></label>
         <textarea id="agent-notes" rows="3" maxlength="2000" placeholder="Prefer healthcare and data platforms; avoid ad tech."></textarea>
         <p class="hint" id="agent-resume-hint" style="margin-top:6px"></p>
-        <button class="btn-sm" id="agent-save" type="button" style="margin-top:8px">Save preferences</button>
+        <button class="btn-sm" id="agent-save" type="button" style="margin-top:8px">Save</button>
       </details>
       <div class="card">
         <div class="section-label">Activity</div>
         <ul class="alist" id="activity"></ul>
+        <button class="btn-sm more-btn" id="activity-more" type="button" hidden>Show all</button>
       </div>
     </div>
   </div>
@@ -630,7 +675,6 @@ async function search() {
     view.mode = "search"; view.jobs = data.jobs || [];
     $("count").innerHTML = `<b>${esc(data.count)}</b> jobs found`;
     $("csv-btn").disabled = !view.jobs.length; $("filters").hidden = !view.jobs.length;
-    if (data.usage && data.limits) updateUsage(data.usage, data.limits);
     renderChips(null); renderJobs();
   } catch (e) { empty("⚠", "Search failed", e.message); toast(e.message, true); }
   btn.disabled = false; btn.textContent = "Search";
@@ -725,20 +769,19 @@ async function sendToSheet() {
   } catch (e) { toast(`Sheets: ${e.message}`, true); }
 }
 
-function updateUsage(usage, limits) {
-  for (const k of ["jsearch", "adzuna", "claude"]) {
-    const el = $(`u-${k}`); if (!el) continue;
-    const lim = num(limits[k]); el.textContent = lim >= 999 ? "∞" : `${num(usage[k])}/${lim}`;
-  }
-}
-async function checkConnection() {
+async function checkConnection(tries = 8) {
   const dot = $("conn-dot"), txt = $("conn-text");
-  try {
-    const r = await fetch(apiBase() + "/health", { mode: "cors" });
-    if (!r.ok) throw 0;
-    dot.className = "dot ok"; txt.textContent = new URL(apiBase()).host;
-    api("/usage").then(r => r.json()).then(d => d.usage && updateUsage(d.usage, d.limits)).catch(() => {});
-  } catch { dot.className = "dot bad"; txt.textContent = "backend offline"; }
+  $("conn-text").parentElement.title = apiBase();
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(apiBase() + "/health", { mode: "cors" });
+      if (r.ok) { dot.className = "dot ok"; txt.textContent = "connected"; agentUI.connected = true; return true; }
+    } catch {}
+    dot.className = "dot"; txt.textContent = "waking server…";
+    await new Promise(res => setTimeout(res, 5000));
+  }
+  dot.className = "dot bad"; txt.textContent = "server offline";
+  return false;
 }
 
 // ── auth: login gate + session token (X-Session-Token on every request, attached in api()) ──
@@ -752,10 +795,22 @@ function showApp() {
   $("app").hidden = false;
   const u = store.get("session_user");
   $("session-user-label").textContent = u ? `Signed in as ${u}` : "";
-  checkConnection();
   initFilters();
   showTab(store.get("tab") === "agent" ? "agent" : "search");
-  loadAgentState();
+  checkConnection().then(ok => { if (ok) { loadAgentState(); loadSavedLeads(); } });
+}
+
+// Search tab opens on the leads you already have (the durable copy), not an empty page
+async function loadSavedLeads() {
+  if (view.mode !== "none") return;
+  try {
+    const r = await api("/leads"); if (!r.ok) return;
+    const d = await r.json(), leads = (d.leads || []).sort((a, b) => num(b.score) - num(a.score));
+    if (!leads.length || view.mode !== "none") return;
+    view.mode = "agent"; view.jobs = leads;
+    $("count").innerHTML = `<b>${leads.length}</b> saved leads · <b>${leads.filter(j => j.hot_lead).length}</b> hot`;
+    $("filters").hidden = false; renderChips(null); renderJobs();
+  } catch {}
 }
 function sessionExpired() {
   store.set("session_token", ""); store.set("session_user", "");
@@ -850,7 +905,7 @@ $("f-save").addEventListener("click", () => {
   const f = readFilters();
   if (!f.titles.length) return toast("Add at least one job title.", true);
   store.set("filters", JSON.stringify(f)); markFilters();
-  toast("Filters saved. The next agent run uses them.");
+  toast("Filters saved. Every Full Search uses them.");
 });
 $("f-reset").addEventListener("click", async () => {
   store.set("filters", ""); markFilters();
@@ -861,7 +916,7 @@ $("f-reset").addEventListener("click", async () => {
 
 // ── Agent tab ("works for you"): /agentmode/* (backend/agent_mode.py). Everything rendered is escaped;
 // kit text is LLM/template output derived from untrusted postings, so it is shown as plain text only. ──
-const agentUI = { state: null, sel: "", fb: {}, polling: false };
+const agentUI = { state: null, sel: "", fb: {}, polling: false, allActivity: false, profile: null, targets: null };
 const LEAD_STATUSES = ["New", "Applied", "Interview", "Rejected", "Skipped"];
 const agentSurfaced = () => new Set(agentUI.state?.surfaced || []);
 const agentBadge = url => agentSurfaced().has(url) ? '<span class="badge-agent" title="Surfaced by the Agent">Agent</span>' : "";
@@ -878,17 +933,24 @@ function showTab(name) {
   $("tab-search").hidden = name !== "search";
   $("tab-agent").hidden = name !== "agent";
   store.set("tab", name);
-  if (name === "agent") loadAgentState();
+  if (name === "agent" && agentUI.connected) loadAgentState();
 }
 
-async function loadAgentState() {
-  try {
-    const r = await api("/agentmode/state");
-    if (!r.ok) return;
-    agentUI.state = await r.json();
-    renderAgent();
-    if (view.jobs.length) renderJobs();   // refresh badges/statuses in the Search tab too
-  } catch {}
+async function loadAgentState(tries = 1) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await api("/agentmode/state");
+      if (r.ok) {
+        agentUI.state = await r.json();
+        renderAgent();
+        if (view.jobs.length) renderJobs();   // refresh badges/statuses in the Search tab too
+        return true;
+      }
+    } catch (e) { if (/Unauthorized/.test(e.message)) return false; }
+    if (i + 1 < tries) await new Promise(res => setTimeout(res, 4000));
+  }
+  if (!agentUI.state) $("brief").innerHTML = '<p class="hint">Could not reach the server. <button class="btn-sm" type="button" data-retry-agent>Try again</button></p>';
+  return false;
 }
 
 function renderAgent() {
@@ -902,58 +964,62 @@ function renderAgent() {
     + ` · ${s.llm ? "LLM picks + kits" : "rule-based picks + template kits (no LLM key)"}`;
   $("duty-run").disabled = !!st.running;
   if (document.activeElement !== $("agent-notes")) $("agent-notes").value = s.notes || "";
-  $("agent-resume-hint").textContent = s.has_resume ? "Resume saved for the agent. Upload a new one in the Search tab and save to replace it."
-    : "No resume saved: upload one in the Search tab, then Save preferences, so kits can be tailored.";
+  $("agent-resume-hint").textContent = s.has_resume ? "Resume saved for the agent. To replace it, upload a new one in the Search tab, then click Save here."
+    : "No resume saved yet: upload one in the Search tab, then click Save here, so kits can be tailored.";
+  renderTargets();
 
   const b = st.brief || {};
   $("brief-date").textContent = b.date || "";
   const fu = (b.follow_ups || []).map(f => `<li><b>${esc(f.title)}</b> at ${esc(f.company)}<div class="meta">Applied ${esc(f.days)} days ago, no change: time for a follow-up note.</div></li>`).join("");
-  const ap = (b.apply_to || []).map(k => `<li class="kit-item" data-kit-open="${esc(k.url)}"><b>${esc(k.title)}</b> at ${esc(k.company)}
-      <div class="meta">${esc(k.reason)}</div></li>`).join("");
-  $("brief").innerHTML = `<div class="brief-head">${esc(b.headline || "Nothing yet.")}</div>
-    ${ap ? `<div class="section-label" style="margin-top:6px">Apply to (kits ready)</div><ul class="alist">${ap}</ul>` : ""}
+  $("brief").innerHTML = `<div class="brief-head">${esc(b.headline || "Nothing yet. Click Run now.")}</div>
     ${fu ? `<div class="section-label" style="margin-top:12px">Follow-ups due</div><ul class="alist">${fu}</ul>` : ""}`;
 
   const kits = st.kits || [];
   if (!kits.some(k => k.url === agentUI.sel)) agentUI.sel = kits[0]?.url || "";
-  $("kits-count").textContent = kits.length ? `${kits.length}` : "";
+  $("kits-count").textContent = kits.length ? `${kits.length} ready` : "";
   $("kits").innerHTML = kits.length ? kits.map((k, i) => `<li class="kit-item${k.url === agentUI.sel ? " sel" : ""}" data-kit-open="${esc(k.url)}">
       <div class="kit-row"><div><b>${esc(k.title)}</b><span class="badge-agent">Agent</span><div class="meta">${esc(k.company)} · ${esc(k.location)} · score ${esc(k.score ?? "—")}${k.fit != null ? ` · fit ${esc(k.fit)}` : ""}</div></div>
       ${statusSelect(k.url, `data-kit-status="${i}"`)}</div><div class="meta">${esc(k.reason)}</div></li>`).join("")
-    : '<li class="hint">No kits yet. Run the agent after a Full Search has saved some leads, or add companies to the watchlist.</li>';
+    : '<li class="hint">No kits yet. Click Run now after a Full Search has saved some leads, or add companies to the watchlist.</li>';
   renderKitDetail();
 
   const appr = st.approvals || [];
-  $("approvals-count").textContent = appr.length ? `${appr.length} pending` : "";
-  $("approvals").innerHTML = appr.length ? appr.map(a => `<li><b>Watch ${esc(a.payload?.company || a.key)}</b>
-      <div class="meta">${esc(a.reason)}${a.payload?.ats ? ` · ${esc(a.payload.ats)} board` : ""}</div>
-      <div class="actions"><button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="accept">Accept</button>
-      <button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="reject">Reject</button></div></li>`).join("")
-    : '<li class="hint">Nothing to approve. The agent proposes companies to watch based on your thumbs-ups, applications and strong sponsors.</li>';
+  $("approve-all").hidden = appr.length < 2;
+  $("approve-all").textContent = `Accept all ${appr.length}`;
+  $("approvals").innerHTML = appr.length ? appr.map(a => `<li class="appr"><div class="appr-text"><b>Watch ${esc(a.payload?.company || a.key)}?</b>
+      <div class="meta">${esc(a.reason)}${a.payload?.ats ? ` · ${esc(a.payload.ats)} board` : ""}</div></div>
+      <div class="appr-btns"><button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="accept" aria-label="Accept ${esc(a.payload?.company || a.key)}">✓</button>
+      <button class="btn-sm" type="button" data-approve="${esc(a.id)}" data-decision="reject" aria-label="Reject ${esc(a.payload?.company || a.key)}">✕</button></div></li>`).join("")
+    : '<li class="hint">Nothing to approve. The agent suggests companies to watch (strong H-1B sponsors with a lead you liked or ranked high). Accepting one means every run checks that company\'s own job board for fresh postings.</li>';
 
   $("watchlist").innerHTML = (st.watchlist || []).map(w => `<span class="chip"><b>${esc(w.company)}</b>${w.ats ? ` · ${esc(w.ats)}` : ""}
       <button type="button" data-unwatch="${esc(w.company)}" aria-label="Remove ${esc(w.company)}">×</button></span>`).join("") || '<span class="hint">No companies yet.</span>';
 
-  $("activity").innerHTML = (st.activity || []).map(a => `<li><span class="act-kind">${esc(a.kind)}</span>${esc(a.message)}
+  const acts = st.activity || [], shown = agentUI.allActivity ? acts : acts.slice(0, 6);
+  $("activity").innerHTML = shown.map(a => `<li><span class="act-kind">${esc(a.kind)}</span>${esc(a.message)}
       <div class="meta">${esc(fmtWhen(a.ts))}</div></li>`).join("") || '<li class="hint">No activity yet.</li>';
+  $("activity-more").hidden = acts.length <= 6;
+  $("activity-more").textContent = agentUI.allActivity ? "Show fewer" : `Show all ${acts.length}`;
 }
 
 function renderKitDetail() {
   const k = (agentUI.state?.kits || []).find(x => x.url === agentUI.sel);
+  $("kit-detail").hidden = !k;
   if (!k) { $("kit-detail").innerHTML = ""; return; }
   const url = safeUrl(k.url), contact = safeUrl(k.contact_link || ""), fb = agentUI.fb[k.url] || "";
-  $("kit-detail").innerHTML = `<h4>${esc(k.title)} · ${esc(k.company)}</h4>
+  $("kit-detail").innerHTML = `<div class="section-label">Apply kit</div><div class="kit-title">${esc(k.title)}</div>
+    <div class="kit-sub">${esc(k.company)} · ${esc(k.location || "location not listed")}${k.score != null ? ` · score ${esc(k.score)}` : ""}</div>
     <div class="actions">${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open posting →</a>` : ""}
       ${contact ? `<a class="btn-sm" href="${esc(contact)}" target="_blank" rel="noopener noreferrer">🔗 Find contact (LinkedIn)</a>` : ""}
       <button type="button" class="fb-btn up" data-kit-fb="up" aria-pressed="${fb === "up"}" aria-label="Good fit">👍</button>
       <button type="button" class="fb-btn down" data-kit-fb="down" aria-pressed="${fb === "down"}" aria-label="Not for me">👎</button>
-      <span class="hint">${k.kit_source === "llm" ? "Written with your LLM key, fact-checked against your resume" : "Template kit"} · picked by ${k.picked_by === "llm" ? "LLM" : "ranking"}</span></div>
+    </div><p class="hint" style="margin-top:8px">${k.kit_source === "llm" ? "Written with your AI key and fact-checked against your resume." : "Template kit (no AI key set): edit it before use."} Picked by ${k.picked_by === "llm" ? "the AI" : "ranking"}.</p>
     ${(k.flags || []).length ? `<div class="flag-box"><b>Unverified content removed:</b> ${esc(k.flags.join("; "))}</div>` : ""}
     <h4>Resume bullets</h4><ul>${(k.bullets || []).map(b => `<li>${esc(b)}</li>`).join("")}</ul>
-    <h4>Cover note <button type="button" class="btn-sm" data-copy-kit="cover">Copy</button></h4>
+    <h4><span>Cover note</span><button type="button" class="btn-sm" data-copy-kit="cover">Copy</button></h4>
     <textarea class="outreach-draft" rows="6" readonly>${esc(k.cover_note)}</textarea>
-    <h4>Screening answers</h4>${(k.screening || []).map((q, i) => `<div class="qa"><b>${esc(q.q)}</b>${esc(q.a)}
-      <button type="button" class="btn-sm" data-copy-kit="qa" data-qa="${i}" style="margin-left:6px">Copy</button></div>`).join("")}
+    <h4>Screening answers</h4>${(k.screening || []).map((q, i) => `<div class="qa"><div><b>${esc(q.q)}</b>${esc(q.a)}</div>
+      <button type="button" class="btn-sm" data-copy-kit="qa" data-qa="${i}">Copy</button></div>`).join("")}
     <p class="hint" style="margin-top:8px">Posted ${esc(k.posted_at || k.posted || "?")} · surfaced ${esc(fmtWhen(k.surfaced_at))}. Review everything before you use it.</p>`;
 }
 
@@ -973,7 +1039,7 @@ async function saveAgentSettings(body, msg) {
     const r = await postJSON("/agentmode/settings", body), d = await r.json();
     if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
     if (msg) toast(msg);
-    loadAgentState();
+    await loadAgentState();
   } catch (e) { toast(e.message, true); }
 }
 
@@ -996,8 +1062,13 @@ async function runAgentNow() {
 }
 
 $("tab-agent").addEventListener("click", async e => {
+  if (e.target.closest("[data-retry-agent]")) { $("brief").innerHTML = '<div class="loading"><div class="spinner"></div>Loading…</div>'; return loadAgentState(6); }
   const open = e.target.closest("[data-kit-open]");
-  if (open && !e.target.closest("select")) { agentUI.sel = open.dataset.kitOpen; renderAgent(); return; }
+  if (open && !e.target.closest("select")) {
+    agentUI.sel = open.dataset.kitOpen; renderAgent();
+    if (window.innerWidth <= 980) $("kit-detail").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
   const appr = e.target.closest("[data-approve]");
   if (appr) {
     try {
@@ -1054,6 +1125,65 @@ $("watch-add-btn").addEventListener("click", async () => {
     $("watch-add").value = ""; loadAgentState();
   } catch (e) { toast(e.message, true); }
 });
+
+// ── Agent targets: where and what the agent looks for (saved server-side, used by scheduled runs too) ──
+function renderTargets() {
+  const saved = agentUI.state?.settings?.filters || null;
+  if (!agentUI.targets) {
+    const base = saved || agentUI.profile;
+    if (!base) {
+      if (agentUI.profile === null) { agentUI.profile = undefined; loadProfileFilters().then(p => { agentUI.profile = p || {}; renderTargets(); }); }
+      return;
+    }
+    agentUI.targets = { titles: [...(base.titles || [])], locations: [...(base.locations || [])], remote_ok: base.remote_ok !== false };
+  }
+  const t = agentUI.targets;
+  $("t-badge").textContent = saved ? "custom" : "profile";
+  $("t-badge").className = "badge" + (saved ? "" : " profile");
+  $("t-locs").innerHTML = t.locations.map((l, i) => `<span class="chip"><b>${esc(l)}</b><button type="button" data-t-loc-rm="${i}" aria-label="Remove ${esc(l)}">×</button></span>`).join("")
+    || '<span class="hint">No places: the agent will consider any location.</span>';
+  $("t-remote").checked = !!t.remote_ok;
+  if (document.activeElement !== $("t-titles")) $("t-titles").value = t.titles.join(", ");
+}
+function addTargetLocation() {
+  const v = $("t-loc-add").value.trim().slice(0, 80);
+  if (!v || !agentUI.targets) return;
+  if (agentUI.targets.locations.length >= 8) return toast("Up to 8 places.", true);
+  if (!agentUI.targets.locations.some(l => l.toLowerCase() === v.toLowerCase())) agentUI.targets.locations.push(v);
+  $("t-loc-add").value = ""; renderTargets();
+}
+$("t-loc-add-btn").addEventListener("click", addTargetLocation);
+$("t-loc-add").addEventListener("keydown", e => { if (e.key === "Enter") addTargetLocation(); });
+$("t-locs").addEventListener("click", e => {
+  const b = e.target.closest("[data-t-loc-rm]");
+  if (b && agentUI.targets) { agentUI.targets.locations.splice(+b.dataset.tLocRm, 1); renderTargets(); }
+});
+$("t-remote").addEventListener("change", e => { if (agentUI.targets) agentUI.targets.remote_ok = e.target.checked; });
+$("t-titles").addEventListener("input", e => { if (agentUI.targets) agentUI.targets.titles = splitList(e.target.value).slice(0, 15).map(x => x.slice(0, 80)); });
+$("t-save").addEventListener("click", async () => {
+  const t = agentUI.targets;
+  if (!t) return;
+  if (!t.titles.length) return toast("Add at least one job title.", true);
+  await saveAgentSettings({ filters: { titles: t.titles, locations: t.locations, remote_ok: t.remote_ok } }, "Targets saved. The next agent run uses them.");
+  agentUI.targets = null; renderTargets();
+});
+$("t-reset").addEventListener("click", async () => {
+  await saveAgentSettings({ clear_filters: true }, "The agent uses your profile again.");
+  agentUI.targets = null; renderTargets();
+});
+$("approve-all").addEventListener("click", async () => {
+  try {
+    const r = await postJSON("/agentmode/approvals/accept-all", {}), d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    toast(`Added ${d.accepted} compan${d.accepted === 1 ? "y" : "ies"} to your watchlist.`);
+    loadAgentState();
+  } catch (e) { toast(e.message, true); }
+});
+$("activity-more").addEventListener("click", () => { agentUI.allActivity = !agentUI.allActivity; renderAgent(); });
+document.querySelectorAll(".seg [data-hours]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".seg [data-hours]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  $("agent-hours").value = b.dataset.hours;
+}));
 
 // ── wiring ──
 $("login-submit").addEventListener("click", doLogin);

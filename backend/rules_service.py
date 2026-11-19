@@ -339,17 +339,41 @@ def apply_filters(rules: dict, f: dict | None) -> dict:
     return rules
 
 
+_ABBR_RX = re.compile(r"(?:^|[,;/|(-]\s*)([A-Z]{2})(?=\s*(?:$|[,;/|)-]|\d{5}))")
+
+
+def named_states(location: str) -> set[str]:
+    """US state abbreviations a location names: "TX, USA", "Austin, TX 78701", "Remote - Texas".
+    Abbreviations count only as an upper-case token between separators ("IN" in "Remote IN TEAM" doesn't)."""
+    found = {m.group(1).lower() for m in _ABBR_RX.finditer(location or "") if m.group(1).lower() in US_STATES}
+    low = (location or "").lower()
+    found |= {a for a, name in US_STATES.items() if re.search(rf"\b{name}\b", low)}
+    return found
+
+
+def _profile_states(rules: dict) -> set[str]:
+    terms = rules["profile"].get("geo_pass_terms", [])
+    return {t[2:] for t in terms if t.startswith(", ")} | {_STATE_BY_NAME[t] for t in terms if t in _STATE_BY_NAME}
+
+
 def geo_ok(location: str, rules: dict, is_remote: bool = False) -> bool:
+    """Only places the user picked, plus truly remote roles when remote_ok. A board's "remote" flag doesn't
+    rescue a posting whose location names another state ("TX, USA" flagged remote by an aggregator):
+    that is the most common way an unwanted location leaks in."""
     loc = (location or "").lower()
-    if is_remote and rules["profile"]["remote_ok"]:
+    terms = rules["profile"]["geo_pass_terms"]
+    if terms and any(re.search(_term_rx(t), loc) for t in terms):
         return True
+    states = named_states(location)
+    if states and states & _profile_states(rules):
+        return True  # "NJ, USA" (abbreviation without a leading comma) is still the user's state
+    if rules["profile"]["remote_ok"] and (is_remote or "remote" in loc):
+        return "remote" in loc or not states  # remote flag + another named state -> not the user's pick
     if not loc or loc in ("remote / not specified", "n/a"):
         return True  # unknown -> let the agent/LLM decide, don't silently drop
     if loc.strip(" .,") in rules["profile"].get("geo_country_only", []):
         return True  # country-only ("United States") = remote/unspecified; "Irvine, CA, United States" is not
-    if not rules["profile"]["geo_pass_terms"]:
-        return True  # no locations set = anywhere
-    return any(re.search(_term_rx(term), loc) for term in rules["profile"]["geo_pass_terms"])
+    return not terms  # no locations set = anywhere
 
 
 def _term_rx(term: str) -> str:

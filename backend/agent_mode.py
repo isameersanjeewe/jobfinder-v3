@@ -33,7 +33,7 @@ from agent_service import dedupe_key
 from contacts import linkedin_people_url
 from fit_service import keyword_fit, score_lead
 from free_sources import fetch_company_board
-from rules_service import apply_gate, load_rules, sponsorship_answer
+from rules_service import apply_filters, apply_gate, geo_ok, load_rules, sponsorship_answer, title_ok
 
 log = logging.getLogger("jobfinder")
 
@@ -169,6 +169,23 @@ def _fetch_watch_entry(w: dict) -> tuple[dict, list[dict], str]:
     return w, [], ""
 
 
+def rules_for(user_id: str, filters_json: str | None) -> dict:
+    """The profile with the Agent's own saved filters (titles, locations...) laid over it -- the same overlay the
+    Search tab's filters use, so "the places I pick" mean the same thing in both tabs."""
+    rules = load_rules(user_id=user_id)
+    try:
+        f = json.loads(filters_json) if filters_json else None
+    except ValueError:
+        f = None
+    return apply_filters(rules, f) if isinstance(f, dict) else rules
+
+
+def _still_eligible(j: dict, rules: dict) -> bool:
+    """Saved Full Search leads were gated with whatever rules were current then. Re-check the two gates the
+    user can change from the UI (title, location) so a lead outside today's picks never gets a kit."""
+    return title_ok(j.get("title", ""), rules) and geo_ok(j.get("location", ""), rules, bool(j.get("is_remote")))
+
+
 def _saved_pool(user_id: str, now: datetime) -> list[dict]:
     rows = data_repo.fetch_user_leads(user_id) if data_repo.enabled() else store.list_leads(user_id)
     cutoff = (now - timedelta(days=POOL_DAYS)).strftime("%Y-%m-%d")
@@ -280,7 +297,7 @@ def llm_decide(shortlist: list[dict], rules: dict, notes: str, budget: LLMBudget
 def _highlight(j: dict) -> str:
     """Skills the JD asks for AND the resume shows (keyword_fit's `matched`) -- never a JD-only skill, which
     would claim experience the user may not have."""
-    m = [s for s in (j.get("matched") or []) if isinstance(s, str)][:3]
+    m = [s for s in (j.get("matched") or []) if isinstance(s, str) and s not in _GENERIC_SKILLS][:3]
     return ", ".join(m) if m else "this area"
 
 
@@ -293,15 +310,24 @@ def _utcnow() -> str:
 
 
 def _cover_template(j: dict) -> str:
+    h = _highlight(j)
+    middle = (f"My background in {h} lines up with what you describe, and I'd welcome the chance to show how I can "
+              "help your team." if h != "this area" else
+              "[Add one line here: your most relevant result for this role.] I'd welcome the chance to talk about it.")
     return (f"Dear {j.get('company') or 'hiring'} team,\n\nI'm applying for the {j.get('title') or 'open'} role. "
-            f"My background in {_highlight(j)} lines up with what you describe, and I'd welcome the "
-            "chance to show how I can help your team. Thank you for your consideration.")
+            f"{middle} Thank you for your consideration.")
+
+
+# keyword_fit terms too generic to be useful advice on their own ("requirements", "platform")
+_GENERIC_SKILLS = {"requirements", "platform", "saas", "b2b", "regulated", "compliance", "kpi", "stakeholder"}
 
 
 def template_kit(j: dict, rules: dict, reason: str, picked_by: str, surfaced_at: str = "") -> dict:
-    matched, missing = (j.get("matched") or [])[:3], (j.get("missing") or [])[:2]
+    matched = [m for m in (j.get("matched") or []) if m not in _GENERIC_SKILLS][:3]
+    missing = [m for m in (j.get("missing") or []) if m not in _GENERIC_SKILLS][:2]
     bullets = [f"Lead with your {m} work: the posting asks for it and your resume shows it." for m in matched]
-    bullets += [f"Gap to address: the posting mentions '{m}' and your resume doesn't; add it if you have it." for m in missing]
+    bullets += [f"The posting asks for {m}, which your resume doesn't mention. If you've done it, add one line with a result."
+                for m in missing]
     if not bullets:
         bullets = ["Mirror the posting's top three requirements in your summary line, using your own results."]
     cover = _cover_template(j)
@@ -311,9 +337,12 @@ def template_kit(j: dict, rules: dict, reason: str, picked_by: str, surfaced_at:
     ans = sponsorship_answer(rules)
     if ans:
         qa.append({"q": "Will you now or in the future require sponsorship to work in the US?", "a": ans})
+    where = j.get("location") or "as listed"
+    fits = geo_ok(j.get("location", ""), rules, bool(j.get("is_remote")))
     qa.append({"q": "Are you able to work from this role's location?",
                "a": f"Yes. I'm targeting {locs}{' and US remote roles' if p.get('remote_ok') else ''}, and this role "
-                    f"({j.get('location') or 'as listed'}) fits that."})
+                    f"({where}) fits that." if fits else
+                    f"Check this one: the role is listed as {where}, outside your targets ({locs}). Answer only if you'd relocate."})
     qa.append({"q": f"Why are you interested in {j.get('company') or 'this company'}?",
                "a": f"The {j.get('title') or 'role'} matches the work I want to do next, and my background in "
                     f"{_highlight(j)} fits what the team needs."})
@@ -525,7 +554,7 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
 
     # 1. load
     settings = store.get_agent_settings(user_id)
-    rules = rules or load_rules(user_id=user_id)
+    rules = rules or rules_for(user_id, settings.get("filters"))
     resume = settings["resume_text"] or os.getenv("RESUME_TEXT", "")
     signals = store.feedback_signal_counts(user_id)
     statuses = store.lead_statuses(user_id)
@@ -537,8 +566,18 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
     act("start", f"Cycle started: {len(watch)} watchlist compan{'y' if len(watch) == 1 else 'ies'}, "
                  f"{'LLM' if fit_service.llm_configured() else 'rule-based'} decisions.")
 
+    # kits for leads that no longer match the user's titles/places (they changed their targets) and that they
+    # haven't acted on are cleared, so the list only ever shows jobs they still want
+    stale = [k["url"] for k in store.list_kits(user_id, 200)
+             if not statuses.get(k["url"]) and not _still_eligible({"title": k.get("title"), "location": k.get("location")}, rules)]
+    if stale:
+        store.delete_kits(user_id, stale)
+        kitted -= set(stale)
+        act("skip", f"Cleared {len(stale)} apply kit(s) for jobs outside your current titles or locations.")
+
     # 2. gather
-    saved = _saved_pool(user_id, now)
+    saved_all = _saved_pool(user_id, now)
+    saved = [j for j in saved_all if _still_eligible(j, rules)]
     fetched, empty_boards = [], []
     if watch:
         with ThreadPoolExecutor(max_workers=6) as ex:
@@ -560,6 +599,8 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
             notable.append(j)
     act("gather", f"Gathered {len(saved)} saved Full Search leads (last {POOL_DAYS} days) and {len(fetched)} watchlist "
                   f"postings; {len(watch_pass)} watchlist postings passed your rules.")
+    if len(saved) < len(saved_all):
+        act("skip", f"Set aside {len(saved_all) - len(saved)} saved lead(s) outside your current titles or locations.")
     if empty_boards:
         act("source", f"No postings returned for: {', '.join(clean(c, 60) for c in empty_boards[:8])} "
                       "(board missing, empty, or unreachable).")
@@ -687,11 +728,19 @@ def public_state(user_id: str, now: datetime | None = None) -> dict:
     kits = store.list_kits(user_id, 30)
     return {"settings": {"enabled": s["enabled"], "interval_hours": s["interval_hours"], "last_run": s["last_run"],
                          "next_run": s["next_run"], "notes": s["notes"], "has_resume": bool(s["resume_text"]),
+                         "filters": _json_or_none(s.get("filters")),
                          "llm": fit_service.llm_configured()},
             "brief": build_brief(user_id, now), "kits": kits, "activity": store.list_activity(user_id, 80),
             "approvals": store.list_approvals(user_id, "pending"), "watchlist": store.list_watchlist(user_id),
             "statuses": {u: v["status"] for u, v in store.lead_statuses(user_id).items()},
             "surfaced": sorted(store.kit_urls(user_id))}
+
+
+def _json_or_none(text):
+    try:
+        return json.loads(text) if text else None
+    except ValueError:
+        return None
 
 
 def sync_to_repo(user_id: str) -> bool:

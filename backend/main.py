@@ -589,6 +589,8 @@ class AgentModeSettings(BaseModel):
     interval_hours: Literal[6, 12, 24, 48, 72, 168] | None = None
     notes:          str | None = Field(default=None, max_length=2000)   # plain-sentence preferences for the LLM
     resume_text:    str | None = Field(default=None, max_length=20000)
+    filters:        AgentFilters | None = None   # the Agent's own titles/locations/etc. (same shape as Search filters)
+    clear_filters:  bool = False                 # True = go back to the profile's defaults
 
 
 class AgentModeRun(BaseModel):
@@ -625,14 +627,18 @@ def agentmode_state(user_id: str = Depends(current_user)):
 
 @app.post("/agentmode/settings")
 def agentmode_settings(p: AgentModeSettings, user_id: str = Depends(current_user)):
-    fields = {k: v for k, v in p.model_dump().items() if v is not None}
+    fields = {k: v for k, v in p.model_dump(exclude={"filters", "clear_filters"}).items() if v is not None}
+    if p.clear_filters:
+        fields["filters"] = ""
+    elif p.filters is not None:
+        fields["filters"] = json.dumps(p.filters.model_dump(exclude_none=True))
     cur = store.get_agent_settings(user_id)
     if fields.get("enabled") and not cur["enabled"]:
         fields["next_run"] = ""   # due immediately once switched on
     if fields.get("enabled") is False:
         fields["next_run"] = ""
     # the scheduled workflow has no access to Render's profile table: snapshot the resolved profile now
-    snap = load_rules(user_id=user_id)
+    snap = agent_mode.rules_for(user_id, fields["filters"] if "filters" in fields else cur.get("filters"))
     snap.pop("researched", None)
     fields["rules_snapshot"] = json.dumps(snap)
     store.save_agent_settings(user_id, **fields)
@@ -680,6 +686,17 @@ def agentmode_status(p: LeadStatusParams, user_id: str = Depends(current_user)):
     res = store.set_lead_status(user_id, p.url, p.status, p.company, p.title)
     agent_mode.sync_to_repo(user_id)
     return res
+
+
+@app.post("/agentmode/approvals/accept-all")
+def agentmode_accept_all(user_id: str = Depends(current_user)):
+    """One click for the whole pending batch (owner decision 8: the first watchlist is approved as one batch)."""
+    done = [r for a in store.list_approvals(user_id, "pending") if (r := store.decide_approval(user_id, a["id"], True))]
+    if done:
+        store.add_activity(user_id, "", "approval", "You accepted adding " +
+                           ", ".join(r["payload"].get("company", "?") for r in done) + " to the watchlist.")
+        agent_mode.sync_to_repo(user_id)
+    return {"accepted": len(done)}
 
 
 @app.post("/agentmode/approvals/{approval_id}")

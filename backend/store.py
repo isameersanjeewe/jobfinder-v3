@@ -224,7 +224,10 @@ def _agent_tables(c) -> None:
     c.execute("""CREATE TABLE IF NOT EXISTS agent_settings (
         user_id TEXT PRIMARY KEY, enabled INTEGER DEFAULT 0, interval_hours INTEGER DEFAULT 24,
         last_run TEXT DEFAULT '', next_run TEXT DEFAULT '', notes TEXT DEFAULT '', resume_text TEXT DEFAULT '',
-        rules_snapshot TEXT DEFAULT '', carry_forward TEXT DEFAULT '[]', brief TEXT DEFAULT '', updated_at TEXT DEFAULT '')""")
+        rules_snapshot TEXT DEFAULT '', carry_forward TEXT DEFAULT '[]', brief TEXT DEFAULT '', updated_at TEXT DEFAULT '',
+        filters TEXT DEFAULT '')""")
+    if "filters" not in [r[1] for r in c.execute("PRAGMA table_info(agent_settings)")]:  # DBs created before 2026-11-19
+        c.execute("ALTER TABLE agent_settings ADD COLUMN filters TEXT DEFAULT ''")
     c.execute("""CREATE TABLE IF NOT EXISTS lead_status (
         user_id TEXT, url TEXT, company TEXT, title TEXT, status TEXT, changed_at TEXT, applied_at TEXT DEFAULT '',
         PRIMARY KEY (user_id, url))""")
@@ -241,9 +244,9 @@ def _agent_tables(c) -> None:
 
 
 _SETTINGS_COLS = ("enabled", "interval_hours", "last_run", "next_run", "notes", "resume_text", "rules_snapshot",
-                  "carry_forward", "brief", "updated_at")
+                  "carry_forward", "brief", "updated_at", "filters")
 _SETTINGS_DEFAULT = {"enabled": 0, "interval_hours": 24, "last_run": "", "next_run": "", "notes": "", "resume_text": "",
-                     "rules_snapshot": "", "carry_forward": "[]", "brief": "", "updated_at": ""}
+                     "rules_snapshot": "", "carry_forward": "[]", "brief": "", "updated_at": "", "filters": ""}
 
 
 def get_agent_settings(user_id: str) -> dict:
@@ -392,6 +395,11 @@ def list_kits(user_id: str, limit: int = 50) -> list[dict]:
     kits = [dict(json.loads(d), created_at=t) for d, t in rows]
     # newest first; within one cycle (same timestamp) best score first
     return sorted(kits, key=lambda k: (k["created_at"], k.get("score") or 0), reverse=True)
+
+
+def delete_kits(user_id: str, urls: list[str]) -> int:
+    with _conn() as c:
+        return sum(c.execute("DELETE FROM apply_kits WHERE user_id=? AND url=?", (user_id, u)).rowcount for u in urls)
 
 
 def kit_urls(user_id: str) -> set[str]:
