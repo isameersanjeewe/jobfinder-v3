@@ -53,8 +53,13 @@ def load_rules(path: str = RULES_PATH, local_path: str | None = None, user_id: s
     if user_id:
         import store  # local import: avoids a hard circular import at module load time
         saved = store.get_profile(user_id)
+    owner = os.getenv("OWNER_USER_ID", "").strip()
     if saved is not None:
         rules = saved
+    elif user_id and owner and user_id != owner and path == RULES_PATH:
+        # RULES_JSON / rules.json is the OWNER's private profile: never hand it to another user (it would leak
+        # their titles, places and visa status, and search with them). Others start neutral until they save filters.
+        rules = starter_profile()
     elif os.getenv("RULES_JSON") and path == RULES_PATH:
         rules = json.loads(os.environ["RULES_JSON"])
     else:
@@ -66,6 +71,17 @@ def load_rules(path: str = RULES_PATH, local_path: str | None = None, user_id: s
         tier = _TIER.get(info.get("signal"))
         if tier and company_signal(co, rules) == "Unverified":
             rules["companies"].setdefault(tier, []).append(co)
+    return rules
+
+
+def starter_profile() -> dict:
+    """The committed example profile with no places (= anywhere + remote): a neutral start for a new user."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "rules.example.json")) as f:
+        rules = json.load(f)
+    p = rules["profile"]
+    p["locations"], p["remote_ok"] = [], True
+    p["geo_pass_terms"], p["geo_rank"] = _geo_from_locations([], True)
+    rules["starter"] = True
     return rules
 
 
@@ -303,7 +319,7 @@ def profile_filters(rules: dict) -> dict:
     return {"titles": p["titles"], "locations": p.get("locations", []), "remote_ok": bool(p.get("remote_ok")),
             "visa": v.get("mode", "new_sponsorship") if v.get("enabled", True) else "none",
             "sponsors_only": bool(v.get("require_company_confirmed", True)),
-            "industries": industries, "exclude_companies": []}
+            "industries": industries, "exclude_companies": [], "starter": bool(rules.get("starter"))}
 
 
 def apply_filters(rules: dict, f: dict | None) -> dict:

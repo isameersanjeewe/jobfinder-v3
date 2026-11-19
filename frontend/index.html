@@ -219,6 +219,17 @@ main { padding:20px 24px; min-width:0; }
 .loading { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; padding:6px 0; }
 .loading .spinner { width:16px; height:16px; margin:0; border-width:2px; }
 .more-btn { margin-top:8px; width:100%; }
+.card.tone { border-top:3px solid var(--tone); }
+.sec-head { display:flex; gap:10px; align-items:flex-start; margin-bottom:12px; }
+.sec-icon { width:30px; height:30px; flex-shrink:0; border-radius:8px; background:var(--tone-bg); color:var(--tone); display:grid; place-items:center; font-size:15px; font-weight:700; }
+.sec-text { flex:1; min-width:0; }
+.sec-title { font-size:14.5px; font-weight:700; line-height:1.3; }
+.sec-sub { font-size:12px; color:var(--muted); margin-top:1px; }
+.kit-sec { background:var(--soft); border:1px solid var(--border); border-radius:var(--radius-sm); padding:4px 12px 10px; margin-top:12px; }
+.kit-sec h4 { margin-top:10px !important; }
+.src-badge { display:inline-block; font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; }
+.src-badge.ai { background:var(--green-bg); color:var(--green); }
+.src-badge.tpl { background:var(--amber-bg); color:var(--amber); }
 .alist li.appr { display:flex; align-items:center; gap:10px; }
 .appr-text { flex:1; min-width:0; }
 .appr-btns { display:flex; gap:6px; flex-shrink:0; }
@@ -300,6 +311,7 @@ main { padding:20px 24px; min-width:0; }
 
     <details id="filters-panel" class="card">
       <summary>Search filters <span class="badge profile" id="filters-badge">profile</span></summary>
+      <div class="flag-box" id="starter-hint" style="margin:0 0 10px" hidden><b>Set up your search first:</b> enter your job titles and the places you want, then Save filters. Until then searches use a general starter profile.</div>
       <label for="f-titles">Job titles <span class="hint">(comma-separated)</span></label>
       <input type="text" id="f-titles" placeholder="Product Manager, Data Engineer…">
       <label for="f-locations">Locations <span class="hint">(one per line, "City, ST")</span></label>
@@ -429,22 +441,21 @@ main { padding:20px 24px; min-width:0; }
   <p class="hint">Each run picks today's best leads from your saved Full Search results and your watchlist, and writes an apply kit for each. It never applies or sends anything: you review, copy and submit.</p>
   <div class="agent-grid">
     <div class="agent-col">
-      <div class="card">
-        <div class="card-title-row"><div class="section-label"><span>Today</span></div><span class="hint" id="brief-date"></span></div>
+      <div class="card tone" style="--tone:var(--duty);--tone-bg:var(--duty-bg)">
+        <div class="sec-head"><span class="sec-icon" aria-hidden="true">☀</span><div class="sec-text"><div class="sec-title">Today's picks</div><div class="sec-sub">The leads the agent picked for you to apply to. Click one to open its kit.</div></div><span class="hint" id="brief-date"></span></div>
         <div id="brief"><div class="loading"><div class="spinner"></div>Loading…</div></div>
-        <div class="section-label" style="margin-top:14px"><span>Apply kits</span><span id="kits-count"></span></div>
+        <div class="section-label" style="margin-top:14px"><span>Leads with apply kits</span><span id="kits-count"></span></div>
         <ul class="alist" id="kits"></ul>
       </div>
-      <div class="card kit-detail" id="kit-detail" hidden></div>
+      <div class="card tone kit-detail" id="kit-detail" style="--tone:var(--agent);--tone-bg:var(--agent-bg)" hidden></div>
     </div>
     <div class="agent-col">
-      <div class="card" id="approvals-card">
-        <div class="card-title-row"><div class="section-label"><span>Approvals</span></div>
-          <button class="btn-sm primary" id="approve-all" type="button" hidden>Accept all</button></div>
+      <div class="card tone" id="approvals-card" style="--tone:var(--amber);--tone-bg:var(--amber-bg)">
+        <div class="sec-head"><span class="sec-icon" aria-hidden="true">✓</span><div class="sec-text"><div class="sec-title">Approvals</div><div class="sec-sub">Changes the agent suggests. Nothing happens until you accept.</div></div><button class="btn-sm primary" id="approve-all" type="button" hidden>Accept all</button></div>
         <ul class="alist" id="approvals"></ul>
       </div>
-      <div class="card" id="targets-card">
-        <div class="card-title-row"><div class="section-label"><span>Where and what to look for</span></div><span class="badge profile" id="t-badge">profile</span></div>
+      <div class="card tone" id="targets-card" style="--tone:var(--blue);--tone-bg:var(--blue-bg)">
+        <div class="sec-head"><span class="sec-icon" aria-hidden="true">⌖</span><div class="sec-text"><div class="sec-title">Where and what to look for</div><div class="sec-sub">The agent only picks jobs that match these.</div></div><span class="badge profile" id="t-badge">profile</span></div>
         <label>Locations</label>
         <div class="loc-chips" id="t-locs"></div>
         <div class="row"><input type="text" id="t-loc-add" placeholder="City, ST or a state" maxlength="80" aria-label="Add a location">
@@ -458,15 +469,15 @@ main { padding:20px 24px; min-width:0; }
         </div>
         <p class="hint" style="margin-top:8px">The agent only picks jobs in these places. A "remote" job that is listed in another state is skipped.</p>
       </div>
-      <div class="card">
-        <div class="section-label">Watchlist</div>
+      <div class="card tone" style="--tone:var(--hot);--tone-bg:var(--hot-bg)">
+        <div class="sec-head"><span class="sec-icon" aria-hidden="true">◎</span><div class="sec-text"><div class="sec-title">Watchlist</div><div class="sec-sub">Companies whose own job boards are checked every run.</div></div></div>
         <div class="watch-chips" id="watchlist"></div>
         <div class="row"><input type="text" id="watch-add" placeholder="Company name" maxlength="100" aria-label="Add a company to the watchlist">
           <button class="btn-sm" id="watch-add-btn" type="button">Add</button></div>
         <p class="hint" style="margin-top:6px">Checked every run for fresh postings on their public Greenhouse/Lever/Ashby job boards.</p>
       </div>
-      <details class="card" id="notes-card">
-        <summary>Notes and resume</summary>
+      <details class="card tone" id="notes-card" style="--tone:var(--muted);--tone-bg:var(--soft)">
+        <summary>Notes and resume <span class="hint" style="font-weight:400">: what the AI writes from</span></summary>
         <label>Resume (PDF) <span class="hint">the AI writes kits only from facts in it</span></label>
         <div class="file-zone">
           <input type="file" accept=".pdf,application/pdf" id="agent-resume-input" aria-label="Upload resume PDF for the agent">
@@ -478,8 +489,8 @@ main { padding:20px 24px; min-width:0; }
         <p class="hint" id="agent-resume-hint" style="margin-top:6px"></p>
         <button class="btn-sm" id="agent-save" type="button" style="margin-top:8px">Save</button>
       </details>
-      <div class="card">
-        <div class="section-label">Activity</div>
+      <div class="card tone" style="--tone:var(--muted);--tone-bg:var(--soft)">
+        <div class="sec-head"><span class="sec-icon" aria-hidden="true">≡</span><div class="sec-text"><div class="sec-title">Activity</div><div class="sec-sub">What the agent did and why, newest first.</div></div></div>
         <ul class="alist" id="activity"></ul>
         <button class="btn-sm more-btn" id="activity-more" type="button" hidden>Show all</button>
       </div>
@@ -523,6 +534,11 @@ const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ESC[c]);
 const safeUrl = u => { try { const x = new URL(u); return (x.protocol === "https:" || x.protocol === "http:") ? x.href : ""; } catch { return ""; } };
 const num = v => Number.isFinite(+v) ? +v : 0;
+// Aggregator pages (Glassdoor, Indeed, LinkedIn...) often wall the posting behind a sign-up. Offer a search that
+// usually lands on the employer's own careers page instead (a plain link; nothing is fetched or scraped).
+const AGG = /(^|\.)(glassdoor|indeed|linkedin|ziprecruiter|google)\./i;
+const boardName = u => { try { const h = new URL(u).hostname; const m = h.match(AGG); return m ? m[2][0].toUpperCase() + m[2].slice(1) : ""; } catch { return ""; } };
+const companySiteUrl = j => "https://www.google.com/search?q=" + encodeURIComponent(`"${j.title || ""}" "${j.company || ""}" careers apply`);
 
 const $ = id => document.getElementById(id);
 function toast(msg, err = false) {
@@ -601,7 +617,8 @@ function renderJobs() {
         <button type="button" class="fb-btn down" data-fb="${i}" data-signal="down" aria-pressed="${fb === "down"}" title="Not for me" aria-label="Not for me">👎</button>
         ${agent ? statusSelect(j.url, `data-status-idx="${i}"`) : ""}
         ${hasDetails ? `<button type="button" class="btn-sm" data-more="${i}" aria-expanded="false" title="Contact, sponsorship answer, outreach draft">⋯</button>` : ""}
-        ${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open →</a>` : ""}</div></td>
+        ${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${boardName(url) ? `Opens on ${esc(boardName(url))}` : "Opens the employer's posting"}">${boardName(url) ? esc(boardName(url)) : "Open"} →</a>` : ""}
+        ${url && boardName(url) ? `<a class="btn-sm" href="${esc(companySiteUrl(j))}" target="_blank" rel="noopener noreferrer" title="Find this job on the company's own site (skips job-board sign-up walls)">Company site</a>` : ""}</div></td>
     </tr>${hasDetails ? `<tr class="job-details" id="jd-${i}" hidden><td colspan="${cols}"><div class="details-panel">
         ${contactUrl ? `<a class="btn-sm" href="${esc(contactUrl)}" target="_blank" rel="noopener noreferrer">🔗 Find contact (LinkedIn)</a>` : ""}
         ${j.sponsorship_answer ? `<div class="sponsor-answer"><b>Sponsorship answer:</b> ${esc(j.sponsorship_answer)}
@@ -815,16 +832,25 @@ function showApp() {
   });
 }
 
+function showSaved(everything) {
+  const all = view.savedAll || [], cut = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const recent = all.filter(j => String(j.first_seen || "").slice(0, 10) >= cut);
+  view.jobs = everything ? all : recent; view.savedShowingAll = !!everything;
+  $("count").innerHTML = `<b>${view.jobs.length}</b> saved leads ${everything ? "(all time)" : "found in the last 7 days"} · <b>${view.jobs.filter(j => j.hot_lead).length}</b> hot`
+    + (all.length > recent.length ? ` · <button class="btn-sm" type="button" data-saved-toggle style="min-height:28px">${everything ? "Last 7 days only" : `Show all ${all.length}`}</button>` : "");
+  $("filters").hidden = !view.jobs.length; renderChips(null); renderJobs();
+  if (!view.jobs.length) empty("∅", "No leads in the last 7 days", "Run Full Search to find today's leads.");
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-saved-toggle]")) showSaved(!view.savedShowingAll); });
 // Search tab opens on the leads you already have (the durable copy), not an empty page
 async function loadSavedLeads() {
   if (view.mode !== "none") return;
   try {
     const r = await api("/leads"); if (!r.ok) return;
-    const d = await r.json(), leads = (d.leads || []).sort((a, b) => num(b.score) - num(a.score));
-    if (!leads.length || view.mode !== "none") return;
-    view.mode = "agent"; view.jobs = leads;
-    $("count").innerHTML = `<b>${leads.length}</b> saved leads · <b>${leads.filter(j => j.hot_lead).length}</b> hot`;
-    $("filters").hidden = false; renderChips(null); renderJobs();
+    const d = await r.json(), all = (d.leads || []).sort((a, b) => num(b.score) - num(a.score));
+    if (!all.length || view.mode !== "none") return;
+    view.savedAll = all; view.mode = "agent";
+    showSaved(false);
   } catch {}
 }
 function sessionExpired() {
@@ -921,14 +947,17 @@ async function loadProfileFilters() {
 }
 async function initFilters() {
   const saved = savedFilters();
-  if (saved) fillFilters(saved); else { const p = await loadProfileFilters(); if (p) fillFilters(p); }
+  let starter = false;
+  if (saved) fillFilters(saved); else { const p = await loadProfileFilters(); if (p) { fillFilters(p); starter = !!p.starter; } }
   markFilters();
+  $("starter-hint").hidden = !starter;
+  if (starter) $("filters-panel").open = true;
 }
 $("f-visa").addEventListener("change", syncVisa);
 $("f-save").addEventListener("click", () => {
   const f = readFilters();
   if (!f.titles.length) return toast("Add at least one job title.", true);
-  store.set("filters", JSON.stringify(f)); markFilters();
+  store.set("filters", JSON.stringify(f)); markFilters(); $("starter-hint").hidden = true;
   toast("Filters saved. Every Full Search uses them.");
 });
 $("f-reset").addEventListener("click", async () => {
@@ -1004,7 +1033,7 @@ function renderAgent() {
   if (!kits.some(k => k.url === agentUI.sel)) agentUI.sel = kits[0]?.url || "";
   $("kits-count").textContent = kits.length ? `${kits.length} ready` : "";
   $("kits").innerHTML = kits.length ? kits.map((k, i) => `<li class="kit-item${k.url === agentUI.sel ? " sel" : ""}" data-kit-open="${esc(k.url)}">
-      <div class="kit-row"><div><b>${esc(k.title)}</b><span class="badge-agent">Agent</span><div class="meta">${esc(k.company)} · ${esc(k.location)} · score ${esc(k.score ?? "—")}${k.fit != null ? ` · fit ${esc(k.fit)}` : ""}</div></div>
+      <div class="kit-row"><div><b>${esc(k.title)}</b> <span class="src-badge ${k.kit_source === "llm" ? "ai" : "tpl"}" style="font-size:9.5px;padding:2px 7px">${k.kit_source === "llm" ? "AI" : "Template"}</span><div class="meta">${esc(k.company)} · ${esc(k.location)} · score ${esc(k.score ?? "—")}${k.fit != null ? ` · fit ${esc(k.fit)}` : ""}</div></div>
       ${statusSelect(k.url, `data-kit-status="${i}"`)}</div><div class="meta">${esc(k.reason)}</div></li>`).join("")
     : '<li class="hint">No kits yet. Click Run now after a Full Search has saved some leads, or add companies to the watchlist.</li>';
   renderKitDetail();
@@ -1033,19 +1062,24 @@ function renderKitDetail() {
   $("kit-detail").hidden = !k;
   if (!k) { $("kit-detail").innerHTML = ""; return; }
   const url = safeUrl(k.url), contact = safeUrl(k.contact_link || ""), fb = agentUI.fb[k.url] || "";
-  $("kit-detail").innerHTML = `<div class="section-label">Apply kit</div><div class="kit-title">${esc(k.title)}</div>
+  const aiKit = k.kit_source === "llm";
+  $("kit-detail").innerHTML = `<div class="sec-head"><span class="sec-icon" aria-hidden="true">✎</span><div class="sec-text"><div class="sec-title">Apply kit</div>
+      <div class="sec-sub">Drafts to copy into your application. Nothing is sent for you.</div></div>
+      <span class="src-badge ${aiKit ? "ai" : "tpl"}">${aiKit ? "AI-written" : "Template"}</span></div>
+    <div class="kit-title">${esc(k.title)}</div>
     <div class="kit-sub">${esc(k.company)} · ${esc(k.location || "location not listed")}${k.score != null ? ` · score ${esc(k.score)}` : ""}</div>
-    <div class="actions">${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open posting →</a>` : ""}
+    <div class="actions">${url ? `<a class="btn-apply" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${boardName(url) ? `Open on ${esc(boardName(url))}` : "Open posting"} →</a>` : ""}
+      ${url && boardName(url) ? `<a class="btn-sm" href="${esc(companySiteUrl(k))}" target="_blank" rel="noopener noreferrer">🔎 Company site</a>` : ""}
       ${contact ? `<a class="btn-sm" href="${esc(contact)}" target="_blank" rel="noopener noreferrer">🔗 Find contact (LinkedIn)</a>` : ""}
       <button type="button" class="fb-btn up" data-kit-fb="up" aria-pressed="${fb === "up"}" aria-label="Good fit">👍</button>
       <button type="button" class="fb-btn down" data-kit-fb="down" aria-pressed="${fb === "down"}" aria-label="Not for me">👎</button>
     </div><p class="hint" style="margin-top:8px">${k.kit_source === "llm" ? "Written with your AI key and fact-checked against your resume." : "Template kit (no AI key set): edit it before use."} Picked by ${k.picked_by === "llm" ? "the AI" : "ranking"}.</p>
     ${(k.flags || []).length ? `<div class="flag-box"><b>Unverified content removed:</b> ${esc(k.flags.join("; "))}</div>` : ""}
-    <h4>Resume bullets</h4><ul>${(k.bullets || []).map(b => `<li>${esc(b)}</li>`).join("")}</ul>
-    <h4><span>Cover note</span><button type="button" class="btn-sm" data-copy-kit="cover">Copy</button></h4>
-    <textarea class="outreach-draft" rows="6" readonly>${esc(k.cover_note)}</textarea>
-    <h4>Screening answers</h4>${(k.screening || []).map((q, i) => `<div class="qa"><div><b>${esc(q.q)}</b>${esc(q.a)}</div>
-      <button type="button" class="btn-sm" data-copy-kit="qa" data-qa="${i}">Copy</button></div>`).join("")}
+    <div class="kit-sec"><h4>Resume bullets</h4><ul>${(k.bullets || []).map(b => `<li>${esc(b)}</li>`).join("")}</ul></div>
+    <div class="kit-sec"><h4><span>Cover note</span><button type="button" class="btn-sm" data-copy-kit="cover">Copy</button></h4>
+    <textarea class="outreach-draft" rows="6" readonly>${esc(k.cover_note)}</textarea></div>
+    <div class="kit-sec"><h4>Screening answers</h4>${(k.screening || []).map((q, i) => `<div class="qa"><div><b>${esc(q.q)}</b>${esc(q.a)}</div>
+      <button type="button" class="btn-sm" data-copy-kit="qa" data-qa="${i}">Copy</button></div>`).join("")}</div>
     <p class="hint" style="margin-top:8px">Posted ${esc(k.posted_at || k.posted || "?")} · surfaced ${esc(fmtWhen(k.surfaced_at))}. Review everything before you use it.</p>`;
 }
 

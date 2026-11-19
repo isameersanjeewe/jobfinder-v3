@@ -11,7 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from scraper_service import normalize
 
-JOBSPY_SITES = ["indeed", "linkedin", "google", "zip_recruiter", "glassdoor"]
+# Glassdoor and ZipRecruiter answer 403 to cloud IPs (GitHub Actions/Render) and Google returns nothing, so they only
+# cost time, and the odd Glassdoor link that got through needs a sign-up. Override with JOBSPY_SITES="indeed,linkedin,...".
+_ALL_JOBSPY_SITES = ["indeed", "linkedin", "google", "zip_recruiter", "glassdoor"]
+JOBSPY_SITES = [x for x in (os.getenv("JOBSPY_SITES") or "indeed,linkedin").replace(" ", "").split(",") if x in _ALL_JOBSPY_SITES]
 UA = {"User-Agent": "Mozilla/5.0 (jobfinder-v4; personal job search)"}
 
 

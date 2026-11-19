@@ -92,6 +92,21 @@ the data repo first (`_agentmode_load`), so a write can't sync an empty state ov
 7. iPhone: in-app brief only, plus a Home Screen tip.
 8. First watchlist approved as one batch.
 
+## 2026-11-19 afternoon
+- **Swathi's "no results":** her runs found 2, 4 and 11 leads but lost them at the save step (fixed, `fcecf2a`).
+  Her runs also used the OWNER's profile: a user without a saved profile fell back to `RULES_JSON`. Fixed with
+  `OWNER_USER_ID` (owner must set it on Render) + `starter_profile()`; the Search filters show a "Set up your search
+  first" hint for starter users.
+- **Glassdoor sign-up walls:** JobSpy now uses only Indeed + LinkedIn (the others 403 or return nothing from cloud IPs).
+  Aggregator links show the board name, plus a "Company site" button (a Google search for the posting on the
+  employer's own site; nothing fetched).
+- **"Static jobs":** the Search tab opened on every saved lead ever. It now shows leads found in the last 7 days, says
+  so, and has a "Show all" toggle.
+- **Agent page:** each section has a colored header, icon and one-line purpose. Kits are labelled AI-written or Template.
+- **Privacy of scraping:** requests go from GitHub Actions / Render IPs, never the owner's home IP (unless run locally).
+  They use a generic User-Agent, with no cookies, logins, emails or names. Don't run `smoke_test.py`/`run_live_test.sh`
+  from home if IP reputation matters.
+
 ## Known issues / open items
 1. **Watchlist suggestions** name companies whose boards the watchlist can't read (Amazon, Google, Bloomberg: not on
    Greenhouse/Lever/Ashby). Only suggest companies with a readable board (`agent_mode.board_from_url`), or add Workday

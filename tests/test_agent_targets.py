@@ -128,4 +128,20 @@ assert c.post("/agentmode/approvals/accept-all", headers=A).json()["accepted"] =
 assert c.post("/agentmode/approvals/1", json={"decision": "accept"}, headers=A).status_code in (200, 404), "id route still works"
 print("ENDPOINTS: targets save/keep/clear + scheduler snapshot, accept-all scoped per user OK")
 
+# ── 4. other users never inherit the owner's profile; JobSpy skips boards that block cloud IPs ──
+os.environ["RULES_JSON"] = json.dumps(dict(EX, profile=dict(EX["profile"], titles=["Owner Only Title"])))
+os.environ["OWNER_USER_ID"] = "tgt-a"
+assert rules_service.load_rules(user_id="tgt-a")["profile"]["titles"] == ["Owner Only Title"], "owner keeps RULES_JSON"
+st = rules_service.load_rules(user_id="tgt-b")
+assert st.get("starter") and st["profile"]["titles"] != ["Owner Only Title"] and st["profile"]["locations"] == []
+assert rules_service.geo_ok("Austin, TX", st, False), "starter profile = anywhere"
+assert c.get("/profile/filters", headers=B).json()["starter"] is True
+assert c.get("/profile/filters", headers=A).json()["starter"] is False
+store.save_profile("tgt-b", dict(EX, profile=dict(EX["profile"], titles=["B Title"])))
+assert rules_service.load_rules(user_id="tgt-b")["profile"]["titles"] == ["B Title"], "a saved profile still wins"
+os.environ.pop("OWNER_USER_ID"); os.environ.pop("RULES_JSON")
+import free_sources
+assert free_sources.JOBSPY_SITES == ["indeed", "linkedin"], free_sources.JOBSPY_SITES
+print("PROFILES: owner profile never leaks to other users; starter = anywhere; JobSpy sites trimmed OK")
+
 print("ALL OK")
