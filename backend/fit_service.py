@@ -13,10 +13,11 @@
 import json, os, re
 import requests
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "none").lower()
-LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/")
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+# .strip(): dashboard text boxes easily keep a trailing space/newline, which turns into a 404 "model not found"
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "none").strip().lower()
+LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile").strip()
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1").strip().rstrip("/")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 LLM_FIT_TIMEOUT = int(os.getenv("LLM_FIT_TIMEOUT", "20"))
 

@@ -110,7 +110,7 @@ class LLMBudget:
             self.stopped = "timeout"
         except requests.HTTPError as e:
             code = getattr(e.response, "status_code", None)
-            self.stopped = "rate limited (HTTP 429)" if code == 429 else f"HTTP {code}"
+            self.stopped = "rate limited (HTTP 429)" if code == 429 else f"HTTP {code}{_provider_error(e.response)}"
         except Exception as e:
             self.stopped = e.__class__.__name__  # never the message: it could echo request details
         else:
@@ -119,6 +119,16 @@ class LLMBudget:
         finally:
             self._last = time.monotonic()
         return None
+
+
+def _provider_error(resp) -> str:
+    """The provider's short error code ("model_not_found", "invalid_api_key"), never the message text or request."""
+    try:
+        err = (resp.json() or {}).get("error") or {}
+        code = err.get("code") or err.get("type") if isinstance(err, dict) else ""
+        return f", {re.sub(r'[^A-Za-z0-9_.-]', '', str(code))[:40]}" if code else ""
+    except Exception:
+        return ""
 
 
 def _llm_request(prompt: str, max_tokens: int) -> str:
