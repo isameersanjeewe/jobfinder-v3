@@ -54,10 +54,12 @@ input:focus-visible, button:focus-visible { outline:2px solid var(--agent); outl
   <div class="sub">Not linked from the app &mdash; bookmark this page.</div>
 
   <div class="card">
-    <div class="section-label">API token</div>
+    <div class="section-label">Owner tokens</div>
     <label for="api-token">API_TOKEN</label>
     <input type="password" id="api-token" autocomplete="off">
-    <p class="hint" style="margin-top:6px">Stored only in this browser. Same value as the Render service's API_TOKEN env var.</p>
+    <label for="admin-token" style="margin-top:10px">ADMIN_TOKEN</label>
+    <input type="password" id="admin-token" autocomplete="off">
+    <p class="hint" style="margin-top:6px">The same values as the Render env vars. API_TOKEN is remembered in this browser; ADMIN_TOKEN only until you close this tab.</p>
   </div>
 
   <div class="card">
@@ -75,7 +77,7 @@ input:focus-visible, button:focus-visible { outline:2px solid var(--agent); outl
 
   <div class="card">
     <div class="section-label">Existing testers</div>
-    <div id="users-list" class="hint">Enter the API token above to load testers.</div>
+    <div id="users-list" class="hint">Enter both tokens above to load testers.</div>
   </div>
 </div>
 <div id="toasts" aria-live="assertive"></div>
@@ -99,8 +101,16 @@ async function api(path, opts = {}) {
   const headers = Object.assign({ "Accept": "application/json" }, opts.headers || {});
   const tok = $("api-token").value.trim();
   if (tok) headers["Authorization"] = `Bearer ${tok}`;
+  const adm = $("admin-token").value.trim();
+  if (adm) headers["X-Admin-Token"] = adm;
   return fetch(apiBase() + path, Object.assign({}, opts, { headers, mode: "cors" }));
 }
+function adminError(res, j, fallback) {
+  if (res.status === 401) return "Wrong API_TOKEN or ADMIN_TOKEN (check both against Render's Environment tab).";
+  if (res.status === 403) return "Admin is disabled: ADMIN_TOKEN is not set on Render.";
+  return j.error || fallback;
+}
+const tokensMissing = () => !$("api-token").value.trim() || !$("admin-token").value.trim();
 
 function toast(msg, err = false) {
   const t = document.createElement("div");
@@ -120,14 +130,14 @@ async function addUser() {
   const user_id = $("new-user-id").value.trim();
   const passcode = $("new-passcode").value;
   const out = $("add-result");
-  if (!$("api-token").value.trim()) { out.style.color = "var(--red)"; out.textContent = "Enter the API token first."; return; }
+  if (tokensMissing()) { out.style.color = "var(--red)"; out.textContent = "Enter both tokens first."; return; }
   if (!user_id || passcode.length < 4) { out.style.color = "var(--red)"; out.textContent = "Enter a user ID and a passcode of 4+ characters."; return; }
   const btn = $("add-user");
   btn.disabled = true; btn.textContent = "Adding…";
   try {
     const res = await api("/admin/add-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id, passcode }) });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error || "failed to add tester");
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(adminError(res, j, "failed to add tester"));
     out.style.color = "var(--green)";
     out.textContent = `${j.created ? "Added" : "Reset passcode for"} "${j.user_id}". Give them the app URL + this passcode.`;
     $("new-user-id").value = ""; $("new-passcode").value = "";
@@ -142,12 +152,12 @@ async function addUser() {
 
 async function loadUsers() {
   const list = $("users-list");
-  if (!$("api-token").value.trim()) { list.textContent = "Enter the API token above to load testers."; return; }
+  if (tokensMissing()) { list.textContent = "Enter both tokens above to load testers."; return; }
   list.textContent = "Loading…";
   try {
     const res = await api("/admin/users");
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error || "failed to load testers");
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(adminError(res, j, "failed to load testers"));
     if (!j.users.length) { list.textContent = "No testers yet."; return; }
     list.innerHTML = "";
     for (const u of j.users) {
@@ -170,8 +180,8 @@ async function removeUser(user_id, btn) {
   btn.disabled = true;
   try {
     const res = await api(`/admin/users/${encodeURIComponent(user_id)}`, { method: "DELETE" });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error || "failed to remove tester");
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(adminError(res, j, "failed to remove tester"));
     loadUsers();
   } catch (e) {
     toast(e.message || "failed to remove tester", true);
@@ -181,9 +191,14 @@ async function removeUser(user_id, btn) {
 
 $("api-token").value = store.get("api_token");
 $("api-token").addEventListener("change", () => { store.set("api_token", $("api-token").value.trim()); loadUsers(); });
+try { $("admin-token").value = sessionStorage.getItem("admin_token") || ""; } catch {}
+$("admin-token").addEventListener("change", () => {
+  try { sessionStorage.setItem("admin_token", $("admin-token").value.trim()); } catch {}
+  loadUsers();
+});
 $("gen-passcode").addEventListener("click", genPasscode);
 $("add-user").addEventListener("click", addUser);
-if ($("api-token").value) loadUsers();
+if (!tokensMissing()) loadUsers();
 </script>
 </body>
 </html>
