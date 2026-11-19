@@ -339,7 +339,8 @@ def apply_filters(rules: dict, f: dict | None) -> dict:
     return rules
 
 
-_ABBR_RX = re.compile(r"(?:^|[,;/|(-]\s*)([A-Z]{2})(?=\s*(?:$|[,;/|)-]|\d{5}))")
+_ABBR_RX = re.compile(r"(?:^|[,;/|(-]\s*|\s)([A-Z]{2})(?=\s*(?:$|[,;/|)-]|\d{5}))")   # "Austin, TX" / "Austin TX" / "TX, USA"
+_ABBR_LOWER_RX = re.compile(r",\s*([a-z]{2})(?=\s*(?:$|[,;/|)-]|\d{5}))")                 # "austin, tx"
 
 
 def named_states(location: str) -> set[str]:
@@ -347,6 +348,7 @@ def named_states(location: str) -> set[str]:
     Abbreviations count only as an upper-case token between separators ("IN" in "Remote IN TEAM" doesn't)."""
     found = {m.group(1).lower() for m in _ABBR_RX.finditer(location or "") if m.group(1).lower() in US_STATES}
     low = (location or "").lower()
+    found |= {m.group(1) for m in _ABBR_LOWER_RX.finditer(low) if m.group(1) in US_STATES}
     found |= {a for a, name in US_STATES.items() if re.search(rf"\b{name}\b", low)}
     return found
 
@@ -356,24 +358,34 @@ def _profile_states(rules: dict) -> set[str]:
     return {t[2:] for t in terms if t.startswith(", ")} | {_STATE_BY_NAME[t] for t in terms if t in _STATE_BY_NAME}
 
 
-def geo_ok(location: str, rules: dict, is_remote: bool = False) -> bool:
-    """Only places the user picked, plus truly remote roles when remote_ok. A board's "remote" flag doesn't
-    rescue a posting whose location names another state ("TX, USA" flagged remote by an aggregator):
-    that is the most common way an unwanted location leaks in."""
+def geo_ok(location: str, rules: dict, is_remote: bool = False, remote_trusted: bool = False) -> bool:
+    """Only places the user picked, plus truly remote roles when remote_ok. `remote_trusted` = the remote flag
+    comes from the employer's own board (Greenhouse/Lever/Ashby/Workday), which lists HQ cities on real remote
+    roles. An aggregator's flag (JobSpy) is NOT trusted when the location names another state: "TX, USA"
+    flagged remote was how unwanted locations leaked in."""
     loc = (location or "").lower()
     terms = rules["profile"]["geo_pass_terms"]
-    if terms and any(re.search(_term_rx(t), loc) for t in terms):
+    places = [t for t in terms if t != "remote"]
+    if places and any(re.search(_term_rx(t), loc) for t in places):
         return True
     states = named_states(location)
     if states and states & _profile_states(rules):
         return True  # "NJ, USA" (abbreviation without a leading comma) is still the user's state
     if rules["profile"]["remote_ok"] and (is_remote or "remote" in loc):
-        return "remote" in loc or not states  # remote flag + another named state -> not the user's pick
+        if "remote" in loc or remote_trusted or not states:
+            return True
+        return not places  # untrusted remote flag + another named state: only OK when no places are set
     if not loc or loc in ("remote / not specified", "n/a"):
         return True  # unknown -> let the agent/LLM decide, don't silently drop
     if loc.strip(" .,") in rules["profile"].get("geo_country_only", []):
         return True  # country-only ("United States") = remote/unspecified; "Irvine, CA, United States" is not
-    return not terms  # no locations set = anywhere
+    return not places  # no places set = anywhere
+
+
+def remote_trusted(job: dict) -> bool:
+    """Employer boards (ATS/Greenhouse|Lever|Ashby|Workday) and the remote-only Remotive board. Aggregators and
+    unknown sources (incl. kits saved before the source was recorded) are not trusted."""
+    return bool(job.get("is_remote")) and str(job.get("source", "")).startswith(("ATS/", "Remotive"))
 
 
 def _term_rx(term: str) -> str:
@@ -423,7 +435,7 @@ def apply_gate(job: dict, rules: dict, hours: int, track: str = "ft") -> dict:
     reason = None
     if not title_ok(job.get("title", ""), rules, include_fallback=(track == "c2c")):
         reason = "title"
-    elif not geo_ok(job.get("location", ""), rules, job.get("is_remote", False)):
+    elif not geo_ok(job.get("location", ""), rules, job.get("is_remote", False), remote_trusted(job)):
         reason = "geography"
     elif (_d := _parse_date(job.get("posted", ""))) and _d > datetime.now() + timedelta(days=1):
         reason = "future_date"  # aggregator dates can be in the future: unusable as a posted date

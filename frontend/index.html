@@ -797,7 +797,10 @@ function showApp() {
   $("session-user-label").textContent = u ? `Signed in as ${u}` : "";
   initFilters();
   showTab(store.get("tab") === "agent" ? "agent" : "search");
-  checkConnection().then(ok => { if (ok) { loadAgentState(); loadSavedLeads(); } });
+  checkConnection().then(ok => {
+    if (ok) { loadAgentState(); loadSavedLeads(); }
+    else $("brief").innerHTML = '<p class="hint">The server did not answer. <button class="btn-sm" type="button" data-retry-agent>Try again</button></p>';
+  });
 }
 
 // Search tab opens on the leads you already have (the durable copy), not an empty page
@@ -933,7 +936,7 @@ function showTab(name) {
   $("tab-search").hidden = name !== "search";
   $("tab-agent").hidden = name !== "agent";
   store.set("tab", name);
-  if (name === "agent" && agentUI.connected) loadAgentState();
+  if (name === "agent" && (agentUI.connected || $("conn-dot").classList.contains("bad"))) loadAgentState(agentUI.connected ? 1 : 6);
 }
 
 async function loadAgentState(tries = 1) {
@@ -1040,7 +1043,8 @@ async function saveAgentSettings(body, msg) {
     if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
     if (msg) toast(msg);
     await loadAgentState();
-  } catch (e) { toast(e.message, true); }
+    return true;
+  } catch (e) { toast(e.message, true); return false; }
 }
 
 async function runAgentNow() {
@@ -1062,7 +1066,11 @@ async function runAgentNow() {
 }
 
 $("tab-agent").addEventListener("click", async e => {
-  if (e.target.closest("[data-retry-agent]")) { $("brief").innerHTML = '<div class="loading"><div class="spinner"></div>Loading…</div>'; return loadAgentState(6); }
+  if (e.target.closest("[data-retry-agent]")) {
+    $("brief").innerHTML = '<div class="loading"><div class="spinner"></div>Loading…</div>';
+    if (await loadAgentState(6)) { checkConnection(1); loadSavedLeads(); }
+    return;
+  }
   const open = e.target.closest("[data-kit-open]");
   if (open && !e.target.closest("select")) {
     agentUI.sel = open.dataset.kitOpen; renderAgent();
@@ -1164,12 +1172,12 @@ $("t-save").addEventListener("click", async () => {
   const t = agentUI.targets;
   if (!t) return;
   if (!t.titles.length) return toast("Add at least one job title.", true);
-  await saveAgentSettings({ filters: { titles: t.titles, locations: t.locations, remote_ok: t.remote_ok } }, "Targets saved. The next agent run uses them.");
-  agentUI.targets = null; renderTargets();
+  if (await saveAgentSettings({ filters: { titles: t.titles, locations: t.locations, remote_ok: t.remote_ok } }, "Targets saved. The next agent run uses them.")) {
+    agentUI.targets = null; renderTargets();   // keep unsaved edits if the save failed
+  }
 });
 $("t-reset").addEventListener("click", async () => {
-  await saveAgentSettings({ clear_filters: true }, "The agent uses your profile again.");
-  agentUI.targets = null; renderTargets();
+  if (await saveAgentSettings({ clear_filters: true }, "The agent uses your profile again.")) { agentUI.targets = null; renderTargets(); }
 });
 $("approve-all").addEventListener("click", async () => {
   try {

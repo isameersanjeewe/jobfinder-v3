@@ -47,22 +47,34 @@ for loc, rem, want in cases:
     assert rules_service.geo_ok(loc, R, rem) is want, (loc, rem, want)
 assert rules_service.named_states("Remote IN TEAM") == set(), "upper-case words are not state codes unless between separators"
 assert rules_service.named_states("TX, USA") == {"tx"}
+# code-review fixes: no-comma and lower-case state codes, trusted employer-board remote flags, "no places = anywhere"
+assert rules_service.named_states("Austin TX") == {"tx"} and rules_service.named_states("austin, tx") == {"tx"}
+assert not rules_service.geo_ok("Austin TX", R, True), "aggregator remote flag + 'Austin TX'"
+assert rules_service.geo_ok("Seattle, WA", R, True, remote_trusted=True), "employer board says remote: HQ city is fine"
+assert rules_service.remote_trusted({"is_remote": True, "source": "ATS/Lever"})
+assert not rules_service.remote_trusted({"is_remote": True, "source": "JobSpy/indeed"})
+ANY = rules_with([], remote_ok=True)
+assert rules_service.geo_ok("Austin, TX", ANY, False) and rules_service.geo_ok("Austin, TX", ANY, True), "no places = anywhere"
 NR = rules_with(["Denver, CO"], remote_ok=False)
 assert not rules_service.geo_ok("Remote", NR, True) and not rules_service.geo_ok("Remote, US", NR, False), "remote off = no remote"
 print("GEO: picked places only; remote flag can't smuggle in another state OK")
 
 
 # ── 2. Agent uses its own saved targets, and re-checks saved Full Search leads against them ──
-def J(t, c, l, remote=False):
-    j = normalize(t, c, l, f"https://x/{c}/{t}/{l}".replace(" ", "_"), today, "mock", "product roadmap sql agile")
+def J(t, c, l, remote=False, source="ATS/Greenhouse"):
+    j = normalize(t, c, l, f"https://x/{c}/{t}/{l}".replace(" ", "_"), today, source, "product roadmap sql agile")
     j["is_remote"] = remote
     return j
 
 saved = [J("Product Manager", "Acme Health", "Austin, TX"),          # passed under the old (example) profile
-         J("Senior Product Manager", "Globex", "TX, USA", remote=True),
+         J("Senior Product Manager", "Globex", "TX, USA", remote=True, source="JobSpy/google"),  # aggregator flag
          J("Product Manager", "Initech", "Denver, CO"),
          J("Product Owner", "Globex", "Remote", remote=True)]
 store.save_leads(saved, "ft", "owner")
+# no Agent targets saved -> saved leads are NOT re-checked (Full Search gated them with that browser's own filters)
+res0 = agent_mode.run_cycle("owner", NOW)
+assert not any("Set aside" in e["message"] for e in res0["events"])
+store.delete_kits("owner", list(store.kit_urls("owner")))
 store.save_agent_settings("owner", filters=json.dumps({"locations": ["Denver, CO"], "remote_ok": True}))
 res = agent_mode.run_cycle("owner", NOW)
 picked = set(res["picks"])
@@ -73,9 +85,11 @@ assert any("Set aside 2 saved lead(s)" in e["message"] for e in res["events"]), 
 store.save_kit("owner", "https://x/old-austin", "c0", {"url": "https://x/old-austin", "title": "Product Manager", "location": "Austin, TX"})
 store.save_kit("owner", "https://x/old-applied", "c0", {"url": "https://x/old-applied", "title": "Product Manager", "location": "Austin, TX"})
 store.set_lead_status("owner", "https://x/old-applied", "Applied")
+store.save_kit("owner", "https://x/old-remote", "c0", {"url": "https://x/old-remote", "title": "Product Manager",
+                                                     "location": "North America", "is_remote": True, "board_source": "ATS/Lever"})
 res2 = agent_mode.run_cycle("owner", NOW)
 urls = store.kit_urls("owner")
-assert "https://x/old-austin" not in urls and "https://x/old-applied" in urls, urls
+assert "https://x/old-austin" not in urls and "https://x/old-applied" in urls and "https://x/old-remote" in urls, urls
 assert any("Cleared 1 apply kit" in e["message"] for e in res2["events"])
 assert agent_mode.rules_for("owner", "not json")["profile"]["locations"] == EX["profile"]["locations"], "bad JSON -> profile"
 print("AGENT TARGETS: run uses saved targets; out-of-area saved leads are set aside OK")
@@ -103,11 +117,13 @@ assert cl["filters"] is None and json.loads(store.get_agent_settings("tgt-a")["r
 for co in ("Wayne Labs", "Stark Bio", "Tyrell Data"):
     store.propose_approval("tgt-a", "watchlist_add", co.lower(), {"company": co}, "strong sponsor")
 store.propose_approval("tgt-b", "watchlist_add", "oscorp", {"company": "Oscorp"}, "strong sponsor")
+store.propose_approval("tgt-a", "preference_change", "p1", {"change": "drop a title"}, "weekly review")
 assert c.post("/agentmode/approvals/accept-all").status_code == 401
 r = c.post("/agentmode/approvals/accept-all", headers=A)
 assert r.status_code == 200 and r.json()["accepted"] == 3, r.text
 assert {w["company"].lower() for w in store.list_watchlist("tgt-a")} >= {"wayne labs", "stark bio", "tyrell data"}
 assert len(store.list_approvals("tgt-b", "pending")) == 1, "accept-all never touches another user's approvals"
+assert [a["kind"] for a in store.list_approvals("tgt-a", "pending")] == ["preference_change"], "plan changes stay one-by-one"
 assert c.post("/agentmode/approvals/accept-all", headers=A).json()["accepted"] == 0
 assert c.post("/agentmode/approvals/1", json={"decision": "accept"}, headers=A).status_code in (200, 404), "id route still works"
 print("ENDPOINTS: targets save/keep/clear + scheduler snapshot, accept-all scoped per user OK")

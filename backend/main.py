@@ -614,12 +614,24 @@ class WatchlistAdd(BaseModel):
     slug:    str = Field(default="", max_length=60, pattern=r"^[A-Za-z0-9_.-]*$")
 
 
+_agentmode_loaded: set[str] = set()
+
+
+def _agentmode_load(user_id: str) -> None:
+    """Render's disk is wiped on every deploy: pull this user's agent state from the data repo before any
+    write, or a write on a fresh instance would sync an EMPTY state back over the durable copy."""
+    if user_id not in _agentmode_loaded and user_id not in _agentmode_running:
+        agent_mode.sync_from_repo(user_id)   # no-op unless the private data repo is configured
+        _agentmode_loaded.add(user_id)
+
+
 @app.get("/agentmode/state")
 def agentmode_state(user_id: str = Depends(current_user)):
     """Everything the Agent tab shows: on-duty settings, Today brief, kits, activity, approvals, watchlist,
     per-lead statuses and the set of agent-surfaced URLs (for the "Agent" badge in both tabs)."""
     if user_id not in _agentmode_running:
-        agent_mode.sync_from_repo(user_id)   # no-op unless the private data repo is configured
+        agent_mode.sync_from_repo(user_id)   # always: picks up kits written by scheduled runs
+        _agentmode_loaded.add(user_id)
     st = agent_mode.public_state(user_id)
     st["running"] = user_id in _agentmode_running
     return st
@@ -627,6 +639,7 @@ def agentmode_state(user_id: str = Depends(current_user)):
 
 @app.post("/agentmode/settings")
 def agentmode_settings(p: AgentModeSettings, user_id: str = Depends(current_user)):
+    _agentmode_load(user_id)
     fields = {k: v for k, v in p.model_dump(exclude={"filters", "clear_filters"}).items() if v is not None}
     if p.clear_filters:
         fields["filters"] = ""
@@ -649,6 +662,7 @@ def agentmode_settings(p: AgentModeSettings, user_id: str = Depends(current_user
 @app.post("/agentmode/run")
 def agentmode_run(p: AgentModeRun, user_id: str = Depends(current_user)):
     """Run one agent cycle now (drafts only; never applies or sends anything)."""
+    _agentmode_load(user_id)
     with _agentmode_lock:
         if user_id in _agentmode_running:
             return JSONResponse({"error": "an agent cycle is already running"}, status_code=429)
@@ -683,6 +697,7 @@ def agentmode_run(p: AgentModeRun, user_id: str = Depends(current_user)):
 def agentmode_status(p: LeadStatusParams, user_id: str = Depends(current_user)):
     """Per-lead status (New/Applied/Interview/Rejected/Skipped), shared by both tabs. Feeds the same memory as
     thumbs (store.feedback_signal_counts): Applied/Interview count as up, Skipped as down."""
+    _agentmode_load(user_id)
     res = store.set_lead_status(user_id, p.url, p.status, p.company, p.title)
     agent_mode.sync_to_repo(user_id)
     return res
@@ -691,7 +706,10 @@ def agentmode_status(p: LeadStatusParams, user_id: str = Depends(current_user)):
 @app.post("/agentmode/approvals/accept-all")
 def agentmode_accept_all(user_id: str = Depends(current_user)):
     """One click for the whole pending batch (owner decision 8: the first watchlist is approved as one batch)."""
-    done = [r for a in store.list_approvals(user_id, "pending") if (r := store.decide_approval(user_id, a["id"], True))]
+    _agentmode_load(user_id)
+    # watchlist additions only: anything that changes the agent's plan still needs a one-by-one decision
+    done = [r for a in store.list_approvals(user_id, "pending")
+            if a["kind"] == "watchlist_add" and (r := store.decide_approval(user_id, a["id"], True))]
     if done:
         store.add_activity(user_id, "", "approval", "You accepted adding " +
                            ", ".join(r["payload"].get("company", "?") for r in done) + " to the watchlist.")
@@ -701,6 +719,7 @@ def agentmode_accept_all(user_id: str = Depends(current_user)):
 
 @app.post("/agentmode/approvals/{approval_id}")
 def agentmode_decide(approval_id: Annotated[int, Path(ge=1)], p: ApprovalDecision, user_id: str = Depends(current_user)):
+    _agentmode_load(user_id)
     res = store.decide_approval(user_id, approval_id, p.decision == "accept")
     if not res:
         return JSONResponse({"error": "no such pending approval"}, status_code=404)
@@ -711,6 +730,7 @@ def agentmode_decide(approval_id: Annotated[int, Path(ge=1)], p: ApprovalDecisio
 
 @app.post("/agentmode/watchlist")
 def agentmode_watch_add(p: WatchlistAdd, user_id: str = Depends(current_user)):
+    _agentmode_load(user_id)
     store.add_watchlist(user_id, p.company, p.ats, p.slug, "manual")
     agent_mode.sync_to_repo(user_id)
     return {"watchlist": store.list_watchlist(user_id)}
@@ -718,6 +738,7 @@ def agentmode_watch_add(p: WatchlistAdd, user_id: str = Depends(current_user)):
 
 @app.delete("/agentmode/watchlist/{company}")
 def agentmode_watch_remove(company: Annotated[str, Path(min_length=1, max_length=100)], user_id: str = Depends(current_user)):
+    _agentmode_load(user_id)
     if not store.remove_watchlist(user_id, company):
         return JSONResponse({"error": "not on your watchlist"}, status_code=404)
     agent_mode.sync_to_repo(user_id)

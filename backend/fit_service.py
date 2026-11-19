@@ -137,7 +137,7 @@ def score_lead(job: dict, rules: dict, feedback_signals: dict | None = None) -> 
     plus an optional feedback bias (roadmap item 1, see feedback_bias() above). Uses gate annotations
     (company_h1b, posting_visa) when present. Hot Lead = score >= hot_threshold. If the profile has
     visa.enabled=false, the H1B factor is not a constraint and gets full points."""
-    from rules_service import company_signal, geo_ok, title_ok
+    from rules_service import company_signal, geo_ok, remote_trusted, title_ok
     sc = rules["scoring"]
     text = f"{job.get('company','')} {job.get('title','')} {job.get('description','')}".lower()
     title = (job.get("title") or "").lower()
@@ -160,7 +160,7 @@ def score_lead(job: dict, rules: dict, feedback_signals: dict | None = None) -> 
     else:
         title_pts = 0
 
-    geo = 15 if geo_ok(job.get("location", ""), rules, job.get("is_remote", False)) else 0
+    geo = 15 if geo_ok(job.get("location", ""), rules, job.get("is_remote", False), remote_trusted(job)) else 0
 
     ind = sc["opportunistic_points"]
     for tier in sc["industry_priority"]:

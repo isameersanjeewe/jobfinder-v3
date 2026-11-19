@@ -399,7 +399,7 @@ def list_kits(user_id: str, limit: int = 50) -> list[dict]:
 
 def delete_kits(user_id: str, urls: list[str]) -> int:
     with _conn() as c:
-        return sum(c.execute("DELETE FROM apply_kits WHERE user_id=? AND url=?", (user_id, u)).rowcount for u in urls)
+        return c.executemany("DELETE FROM apply_kits WHERE user_id=? AND url=?", [(user_id, u) for u in urls]).rowcount
 
 
 def kit_urls(user_id: str) -> set[str]:

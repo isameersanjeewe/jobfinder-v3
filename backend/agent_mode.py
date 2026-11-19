@@ -33,7 +33,7 @@ from agent_service import dedupe_key
 from contacts import linkedin_people_url
 from fit_service import keyword_fit, score_lead
 from free_sources import fetch_company_board
-from rules_service import apply_filters, apply_gate, geo_ok, load_rules, sponsorship_answer, title_ok
+from rules_service import apply_filters, apply_gate, geo_ok, load_rules, remote_trusted, sponsorship_answer, title_ok
 
 log = logging.getLogger("jobfinder")
 
@@ -173,17 +173,14 @@ def rules_for(user_id: str, filters_json: str | None) -> dict:
     """The profile with the Agent's own saved filters (titles, locations...) laid over it -- the same overlay the
     Search tab's filters use, so "the places I pick" mean the same thing in both tabs."""
     rules = load_rules(user_id=user_id)
-    try:
-        f = json.loads(filters_json) if filters_json else None
-    except ValueError:
-        f = None
+    f = _json_or_none(filters_json)
     return apply_filters(rules, f) if isinstance(f, dict) else rules
 
 
 def _still_eligible(j: dict, rules: dict) -> bool:
     """Saved Full Search leads were gated with whatever rules were current then. Re-check the two gates the
     user can change from the UI (title, location) so a lead outside today's picks never gets a kit."""
-    return title_ok(j.get("title", ""), rules) and geo_ok(j.get("location", ""), rules, bool(j.get("is_remote")))
+    return title_ok(j.get("title", ""), rules) and geo_ok(j.get("location", ""), rules, bool(j.get("is_remote")), remote_trusted(j))
 
 
 def _saved_pool(user_id: str, now: datetime) -> list[dict]:
@@ -298,7 +295,7 @@ def _highlight(j: dict) -> str:
     """Skills the JD asks for AND the resume shows (keyword_fit's `matched`) -- never a JD-only skill, which
     would claim experience the user may not have."""
     m = [s for s in (j.get("matched") or []) if isinstance(s, str) and s not in _GENERIC_SKILLS][:3]
-    return ", ".join(m) if m else "this area"
+    return ", ".join(m)
 
 
 def _utc() -> datetime:
@@ -312,7 +309,7 @@ def _utcnow() -> str:
 def _cover_template(j: dict) -> str:
     h = _highlight(j)
     middle = (f"My background in {h} lines up with what you describe, and I'd welcome the chance to show how I can "
-              "help your team." if h != "this area" else
+              "help your team." if h else
               "[Add one line here: your most relevant result for this role.] I'd welcome the chance to talk about it.")
     return (f"Dear {j.get('company') or 'hiring'} team,\n\nI'm applying for the {j.get('title') or 'open'} role. "
             f"{middle} Thank you for your consideration.")
@@ -338,14 +335,15 @@ def template_kit(j: dict, rules: dict, reason: str, picked_by: str, surfaced_at:
     if ans:
         qa.append({"q": "Will you now or in the future require sponsorship to work in the US?", "a": ans})
     where = j.get("location") or "as listed"
-    fits = geo_ok(j.get("location", ""), rules, bool(j.get("is_remote")))
+    fits = geo_ok(j.get("location", ""), rules, bool(j.get("is_remote")), remote_trusted(j))
     qa.append({"q": "Are you able to work from this role's location?",
                "a": f"Yes. I'm targeting {locs}{' and US remote roles' if p.get('remote_ok') else ''}, and this role "
                     f"({where}) fits that." if fits else
                     f"Check this one: the role is listed as {where}, outside your targets ({locs}). Answer only if you'd relocate."})
     qa.append({"q": f"Why are you interested in {j.get('company') or 'this company'}?",
-               "a": f"The {j.get('title') or 'role'} matches the work I want to do next, and my background in "
-                    f"{_highlight(j)} fits what the team needs."})
+               "a": f"The {j.get('title') or 'role'} matches the work I want to do next" +
+                    (f", and my background in {_highlight(j)} fits what the team needs." if _highlight(j) else
+                     ". [Add one line on what draws you to this company.]")})
     qa.append({"q": "What are your salary expectations?",
                "a": "I'm flexible and would like to understand the full compensation range for this role first."})
     return {"url": j["url"], "title": j.get("title", ""), "company": j.get("company", ""), "location": j.get("location", ""),
@@ -354,6 +352,7 @@ def template_kit(j: dict, rules: dict, reason: str, picked_by: str, surfaced_at:
             "fit": j.get("fit"), "company_h1b": j.get("company_h1b", ""), "reason": reason, "picked_by": picked_by,
             "source": j.get("agent_source") or "full_search", "bullets": bullets, "cover_note": cover,
             "kit_source": "template", "screening": qa, "contact_link": j.get("contact_link", ""),
+            "is_remote": bool(j.get("is_remote")), "board_source": j.get("source", ""),
             "sponsorship_answer": ans}
 
 
@@ -554,6 +553,9 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
 
     # 1. load
     settings = store.get_agent_settings(user_id)
+    # re-check saved leads / sweep kits only against targets the user set in the Agent tab: without them, Full Search
+    # already gated each lead with that browser's own Search filters, which the server can't see
+    targets_set = bool(_json_or_none(settings.get("filters")))
     rules = rules or rules_for(user_id, settings.get("filters"))
     resume = settings["resume_text"] or os.getenv("RESUME_TEXT", "")
     signals = store.feedback_signal_counts(user_id)
@@ -568,8 +570,10 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
 
     # kits for leads that no longer match the user's titles/places (they changed their targets) and that they
     # haven't acted on are cleared, so the list only ever shows jobs they still want
-    stale = [k["url"] for k in store.list_kits(user_id, 200)
-             if not statuses.get(k["url"]) and not _still_eligible({"title": k.get("title"), "location": k.get("location")}, rules)]
+    stale = [k["url"] for k in (store.list_kits(user_id, 200) if targets_set else [])
+             if not statuses.get(k["url"]) and not _still_eligible(
+                 {"title": k.get("title"), "location": k.get("location"), "source": k.get("board_source", ""),
+                  "is_remote": k.get("is_remote", True)}, rules)]
     if stale:
         store.delete_kits(user_id, stale)
         kitted -= set(stale)
@@ -577,7 +581,7 @@ def run_cycle(user_id: str, now: datetime | None = None, rules: dict | None = No
 
     # 2. gather
     saved_all = _saved_pool(user_id, now)
-    saved = [j for j in saved_all if _still_eligible(j, rules)]
+    saved = [j for j in saved_all if _still_eligible(j, rules)] if targets_set else saved_all
     fetched, empty_boards = [], []
     if watch:
         with ThreadPoolExecutor(max_workers=6) as ex:
