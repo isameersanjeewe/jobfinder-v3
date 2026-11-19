@@ -101,7 +101,11 @@ the data repo first (`_agentmode_load`), so a write can't sync an empty state ov
 3. `leads.json` may exceed the GitHub Contents API's 1 MB read limit as it grows.
 4. Actions runs don't persist company signals; there is no shared `llm.py` (three copies of LLM call code).
 5. Web Push (A2) not built.
-6. The first scheduled Agent run (weekday 12:20 UTC) hasn't been checked yet. Confirm it commits kits to the data repo.
+6. Scheduled Agent: the 12:20 UTC cron on 2026-11-19 never fired (GitHub cron is best-effort). A manual dispatch
+   worked (run 44551360104: "Anyone due?" -> nobody due, exited). Re-check after the 21:20 UTC slot.
+   Fixed 2026-11-19: Full Search runs in the data repo failed at the save step whenever Render wrote meanwhile (5 of
+   10 runs, leads lost). run-agent.yml now retries from the latest remote (app `data-repo-template`, data repo `fcecf2a`).
+   Runs/logs can be read via the GitHub API with the stored git credential (`gh` is not installed).
 7. Browser checks of github.com aren't allowed in the Chrome extension (Actions secrets can't be viewed there).
 8. Optional: an automatic AI fallback (Groq → Gemini) via `LLM_FALLBACK_*` vars. Not built.
 
