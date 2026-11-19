@@ -28,7 +28,7 @@ The full run takes a few minutes, so give the Bash call a timeout of about 10 mi
   - If it's a false positive, add it to the script's allowlist and note why under Lessons.
 
 ## When a suite is missing or new
-The script runs `tests/test_agent.py`, `test_core_regression.py`, `test_agent_mode.py` and `test_agent_mode_qa.py`. When you add a suite, add it to the `for t in ...` line in `scripts/verify.sh` and to CLAUDE.md's Run/test block in the same change.
+The script runs `tests/test_agent.py`, `test_core_regression.py`, `test_agent_mode.py` , `test_agent_mode_qa.py` and `test_agent_targets.py`. When you add a suite, add it to the `for t in ...` line in `scripts/verify.sh` and to CLAUDE.md's Run/test block in the same change.
 
 ## What this does not cover
 - Live job sources (`run_live_test.sh`, `smoke_test.py`). Those hit real boards and take minutes, so run them only when source code changed.

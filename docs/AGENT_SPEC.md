@@ -206,7 +206,19 @@ Minutes estimate (to be validated in Phase A): shared scrape ~15 min x 22 weekda
 - `drive.file` limits the app to files it created or the user explicitly opened; app must not ask for broader Drive scopes.
 - Owner passcode login is a backup path and must remain rate-limited.
 
-## 12. Open questions (need the owner)
+## 12. Owner decisions (2026-11-19: owner agreed to all eight recommended answers)
+1. Fresh scrape capped at **1 per user per week** (the shared daily scrape covers the rest).
+2. The owner's LLM key goes in **both** Render env and the data repo's Actions secrets (Phase A).
+3. **Owner approves every user**, below the 15-seat cap too.
+4. Phase B admin = the Google account set in **`OWNER_EMAIL`**; the passcode owner maps to the same user_id.
+5. Owner-side Phase B records live in the **private data repo** (tokens encrypted with `ENCRYPTION_KEY`; accepted risk).
+6. Phase D: **cut any capability used by <20% of active users after 4 weeks**.
+7. iPhone users: **in-app brief only**, plus a tip to add the site to the Home Screen for push.
+8. The first agent-seeded watchlist is **one batch approval** (built: "Accept all" in Approvals, `POST /agentmode/approvals/accept-all`).
+Also settled: the data repo, not Render, is the source of truth for the Agent tab (item 11 below), and the agent only
+picks jobs in the places the user picks ("Where and what to look for" card, saved per user, used by scheduled runs too).
+
+## 13. Open questions (remaining)
 
 1. **Fresh-scrape budget.** 1/user/day x 15 users can exceed 3,000 min. Lower to 1/user/week, or a global daily cap (e.g. 3 per day across users)?
 2. **Where does the Agent loop LLM key live in Phase A?** Needs to be both a Render env var and a data-repo Actions secret. OK to put the owner's Groq key in both?

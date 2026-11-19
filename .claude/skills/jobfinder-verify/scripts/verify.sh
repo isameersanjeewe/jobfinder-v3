@@ -13,7 +13,7 @@ FAIL=0
 
 if [ "$MODE" != "--privacy-only" ]; then
   echo "== offline test suites"
-  for t in tests/test_agent.py tests/test_core_regression.py tests/test_agent_mode.py tests/test_agent_mode_qa.py; do
+  for t in tests/test_agent.py tests/test_core_regression.py tests/test_agent_mode.py tests/test_agent_mode_qa.py tests/test_agent_targets.py; do
     [ -f "$t" ] || { echo "  SKIP  $t (not present)"; continue; }
     out="$("$PY" "$t" 2>&1 </dev/null)"; rc=$?
     last="$(printf '%s\n' "$out" | tail -1)"
