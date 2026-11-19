@@ -23,6 +23,7 @@ the example profile only. No hardcoded locations, titles or industries in code: 
 | `add_user.py` | Owner-run CLI, no self-serve signup: `python add_user.py <user_id> <passcode>` creates/resets a tester's passcode in the `users` table (see Multi-user) |
 | `data_repo.py` | Optional Render-side GitHub API client for the private data repo (see Multi-user): reads `data/<user_id>/leads.json` via the Contents API, triggers/polls the agent run via `workflow_dispatch`. Inert (`enabled()` is `False`) unless `DATA_REPO_TOKEN`/`DATA_REPO` are set -- until then everything runs exactly as before, in-process against local SQLite |
 | `agent_service.py` | Agent loop. Cross-site dedupe (`dedupe_key`: company + title + city; text of duplicate copies is merged so any disclaimer still blocks). Plan researches unverified companies by best potential score, routes staffing jobs to the C2C track. h1bdata research is per year (last + current) and cached with expiry. Tools: `search_jobs`, `research_company_h1b`, `set_company_signal`, `score_jobs`, `save_leads`, `finish`. Providers: `LLM_PROVIDER=openai` (Ollama/Groq/Gemini, OpenAI-compatible), `anthropic`, or `none` (deterministic `_plan()` with the same tools). System prompt is filled from the profile. Small models: args are coerced and the plan runs as fallback if the LLM stops without saving. `AgentRun` loads this user's accumulated `/feedback` signals once per run (item 1) and accumulates this run's posting-level no-sponsorship detections, flushed to the shared company DB at run end (item 5, applies starting next run). `score_jobs()`/`save_leads()` attach `contact_link` (item 3) and `sponsorship_answer` (item 4) to every scored/saved lead, and refine `fit`/`fit_source` for the top `LLM_FIT_TOP_N` passing leads via `fit_service.llm_gap_fit()` (item 2) |
+| `agent_mode.py` | **Agent tab (roadmap item 8, Phase A, owner-first).** One cycle: load memory (profile, feedback + lead statuses, watchlist, preferences) -> gather saved Full Search leads + watchlist postings via the existing Greenhouse/Lever/Ashby fetchers -> same gate/score as Full Search -> pick 3-4 leads (one batched LLM call, or deterministic ranking) -> apply kits (LLM or template) -> watchlist proposals into Approvals -> Activity log + Today brief. Never calls `agent_service` tools or `set_company_signal` (test-enforced). Job text is untrusted: LLM only reorders already-gated candidates (ids validated), output is stripped of links and payment/identity asks, kit bullets are fact-checked against the resume (heuristic), visa/sponsorship text comes ONLY from `sponsorship_answer()`. First LLM error stops LLM use for the cycle; kits are saved one by one and pending ones carry to the next cycle. CLI: `python agent_mode.py --user <id>` / `--due`. Tables in `store.py`: `agent_settings`, `lead_status` (`applied_at`), `watchlist`, `approvals`, `agent_activity`, `apply_kits`. Endpoints `/agentmode/state`, `/agentmode/settings`, `/agentmode/run`, `/agentmode/status`, `/agentmode/approvals/{id}`, `/agentmode/watchlist` (all `Depends(current_user)`). Scheduler: `data-repo-template/.github/workflows/scheduled-agent.yml` + `scripts/run_agent_cycle.py` |
 | `rules.example.json` | Committed profile template. Users copy it to `rules.json` (gitignored), or (multi-user) get it as their default until they have a saved profile row. Load order: per-user saved profile (if `user_id` given and found) -> env `RULES_JSON` -> env `RULES_PATH` -> `rules.json` -> `rules.example.json` |
 | `rules_service.py` | Gate: title -> geo -> future date -> recency -> (if `visa.enabled`) **auto-reject company flag** (item 5) -> posting visa language (`No`/`Yes`/`Transfer`/`Unknown`; `Transfer` passes only with `visa.mode = h1b_transfer`) -> staffing firm (`staffing_c2c_only`) -> company H1B tier. Sets `job["gate"]` = `pass` or a reason. `load_rules(user_id=...)` prefers that user's saved profile (`store.profiles`) over the file-based one, and still merges per-user `rules.local.json` (persisted research; never overrides manual tiers). `save_company_signal()`/`record_no_sponsorship()` write through to the shared, durable `data/_company_signals.json` in the private data repo when configured (item 6); `sync_company_signals_from_repo()` pulls it back on startup. `sponsorship_answer()` is the item-4 answer bank |
 | `free_sources.py` | JobSpy (each title x profile locations + remote US, deduped by URL, per-call timeout) + Greenhouse/Lever/Ashby public JSON + Workday (`slug: "tenant.wdN/site"`; serialized + 429 backoff) |
@@ -102,6 +103,9 @@ Nothing role-specific is hardcoded: the default role family lives in the profile
 - `ALLOWED_ORIGINS` env (CORS, default `*`). Input limits on every request model; one agent run at a time (HTTP 429 otherwise); resume uploads capped at 5 MB / 20 pages and must be a PDF; server errors are logged, clients get a generic message.
 - Untrusted scraped text: the UI escapes everything and only opens `http(s)` links (plus a CSP). CSV/XLSX cells starting with `= + - @` are prefixed with `'`. Sheets appends use `RAW` (never parsed as formulas).
 - Dependencies: `pip-audit` runs in `run_live_test.sh`; requirement minimums are the first versions with no known CVEs. Keep them current.
+- `ADMIN_TOKEN` env (2026-11-18): `/admin/*` needs header `X-Admin-Token` (plus the bearer when `API_TOKEN` is set). Unset = `/admin/*` disabled (403). Never reuse `API_TOKEN` for it -- testers may hold `API_TOKEN`.
+- Session hardening (2026-11-18): empty `SESSION_SECRET` no longer signs with an empty key (random per-process fallback, so forged tokens fail; sessions reset on restart). `current_user` rejects tokens of removed users. `/auth/login` locks a user_id for 15 min after 5 wrong passcodes. Signed-in users' thumbs no longer write the legacy global `feedback_store`. User ids can't contain `..` or start with `.`.
+- Auto-reject (2026-11-18 fix): only postings that passed title/geo/recency count (gate `posting_no_sponsorship`), each posting URL counts once across runs (hashes kept per company, capped at 50), and the run-end flush is one batched write (`record_no_sponsorship_hits`), not one data-repo commit per company.
 - Multi-user (2026-11-17): `API_TOKEN` still gates the whole API; a second layer (`auth.py`, `POST /auth/login`)
   identifies which user is calling, so `user_id` is derived from a verified session token, never a client-supplied
   field. See "Multi-user" section above.
@@ -112,15 +116,19 @@ python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt -r te
 cp backend/rules.example.json backend/rules.json   # then edit your profile
 cp backend/.env.example backend/.env               # optional: Sheets + LLM settings
 .venv/bin/python tests/test_agent.py          # offline, mocked sources; must print ALL OK
+.venv/bin/python tests/test_core_regression.py # offline: auth/isolation/injection/auto-reject regressions; ALL OK
+.venv/bin/python tests/test_agent_mode.py     # offline: Agent tab cycle, kits, fact-check, endpoints; ALL OK
+.venv/bin/python tests/test_agent_mode_qa.py  # offline: hostile-JD injection, isolation, LLM-error paths; ALL OK (1 known gap: lowercase invented tool names)
 bash run_live_test.sh                          # audit + offline + live sources -> logs/
 cd backend && ../.venv/bin/python smoke_test.py --quick   # live sources + H1B filter checks, ~2 min
 cd backend && ../.venv/bin/uvicorn main:app --reload   # API on :8000
 ```
-Env: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `ANTHROPIC_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON or a path to the key file), `SHEET_ID`, `DB_PATH`, `RULES_PATH`, `RULES_JSON`, `RULES_LOCAL_PATH`, `API_TOKEN`, `ALLOWED_ORIGINS`, `JOBSPY_PROXIES`, `JOBSPY_TIMEOUT`, `AGENT_MAX_STEPS`, `SESSION_SECRET`, `SESSION_DAYS` (multi-user session tokens, see Multi-user), `DATA_REPO_TOKEN`, `DATA_REPO`, `DATA_REPO_WORKFLOW`, `DATA_REPO_BRANCH` (optional private-repo persistence, see Multi-user and `docs/MULTI_USER_SETUP.md`), `LLM_FIT_TOP_N` (default 5, roadmap item 2), `LLM_FIT_TIMEOUT`, `LLM_OUTREACH_TIMEOUT` (item 7), `AUTO_REJECT_THRESHOLD` (default 2, item 5).
+Env: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `ANTHROPIC_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON or a path to the key file), `SHEET_ID`, `DB_PATH`, `RULES_PATH`, `RULES_JSON`, `RULES_LOCAL_PATH`, `API_TOKEN`, `ALLOWED_ORIGINS`, `JOBSPY_PROXIES`, `JOBSPY_TIMEOUT`, `AGENT_MAX_STEPS`, `SESSION_SECRET`, `SESSION_DAYS` (multi-user session tokens, see Multi-user), `ADMIN_TOKEN` (owner-only `/admin/*`, see Security), `DATA_REPO_TOKEN`, `DATA_REPO`, `DATA_REPO_WORKFLOW`, `DATA_REPO_BRANCH` (optional private-repo persistence, see Multi-user and `docs/MULTI_USER_SETUP.md`), `LLM_FIT_TOP_N` (default 5, roadmap item 2), `LLM_FIT_TIMEOUT`, `LLM_OUTREACH_TIMEOUT` (item 7), `AUTO_REJECT_THRESHOLD` (default 2, item 5). Agent mode: `AGENT_KITS_PER_CYCLE` (4), `AGENT_LLM_MAX_CALLS_PER_CYCLE` (6), `AGENT_CYCLE_TOKEN_BUDGET` (18000), `AGENT_LLM_MIN_GAP_SECONDS` (4), `AGENT_LLM_TIMEOUT` (30), `AGENT_SHORTLIST` (10), `AGENT_POOL_DAYS` (7), `AGENT_WATCH_HOURS` (72), `AGENT_WATCHLIST_MAX` (25), `AGENT_FOLLOW_UP_DAYS` (7).
 
 Add a tester: `cd backend && python add_user.py <user_id> <passcode>`, then give them the app's URL + their user_id + passcode (no self-serve signup). See `docs/MULTI_USER_SETUP.md`.
 
 ## How to work in this repo
+- **Project skills** (`.claude/skills/`, improve them after each use via their `## Lessons` section): `jobfinder-verify` (all offline suites + privacy scan, run before any commit/"done"), `jobfinder-release` (gate -> commit -> push -> live checks), `jobfinder-agent-team` (PM/Dev/QA/Architect/Adversarial/Ops lanes, relay, merge), `jobfinder-llm-safety` (untrusted JDs, visa text only from `sponsorship_answer()`, fact-check, budgets).
 - **Diff-only edits scoped to the named function.** Never regenerate whole files.
 - **Fix scraper volume/quality before adding features.**
 - **Company-level LCA data beats keyword scanning** for sponsorship. Keyword scan is only for explicit "no sponsorship" language on a posting.
@@ -150,47 +158,49 @@ bounded tool-call loop per click, no initiative, no operation over time. Renamed
 user-facing benefit, touches the private-repo workflow contract). The real agentic piece belongs in a genuinely
 separate component -- see "Agent (true automation)" below, not yet built.
 
-## Agent (true automation) -- design, not yet built (2026-11-18)
-What actually makes something "agentic" in the sense the user meant: operating with initiative over time without
-being asked each time, and proactively telling the user something worth their attention. That's a different
-shape of problem from "Run Full Search," and should be a new, separate, opt-in component, not a rename of the
-existing button.
+## Agent (true automation) -- design settled 2026-11-18; Phase A v1 built 2026-11-18 (uncommitted, see agent_mode.py)
+Known v1 gaps: Render and the scheduled workflow can both write `data/<user>/agent.json` (a UI change during a cycle can be lost); watchlist leads reach `leads.json` only from scheduled runs when the data repo is on; fact-check is heuristic; both data-repo workflows share the `data-repo-writes` concurrency group (GitHub keeps only ONE pending run per group: a newer pending run cancels an older pending one -- fine at owner scale, revisit for 15 users); scheduled commits are whole-file (never hunk-merged JSON); set data-repo variable `APP_REF` to a reviewed commit SHA to pin the app code; Web Push not built (A2). Open review items (adversarial/architect, see `docs/*_REVIEW.local.md`): generic `rules.example.json`, owner profile as default for other users, `leads.json` 1MB Contents-API limit, Actions runs not persisting company signals, shared `llm.py` refactor.
+Full spec, acceptance criteria, data models and endpoints: `docs/AGENT_SPEC.md`. Owner-only manual steps: `docs/OWNER_SETUP.md`.
 
-**Design:**
-- **Opt-in per user**, configured in-app: enable/disable, a check interval (e.g. every 6h/12h/24h), and
-  optionally their own LLM provider + API key (BYO -- see below).
-- **Scheduling infra**: reuse what's already built, don't invent new infra. Render's free plan can't run a
-  reliable background cron (sleeps when idle). The private data repo (`docs/MULTI_USER_SETUP.md`) already has a
-  GitHub Actions workflow per user-triggered run; add ONE additional scheduled workflow (fixed cron, e.g. hourly)
-  that iterates over every user with Agent enabled, checks whether their chosen interval has elapsed, and if so
-  runs `scripts/run_for_user.py` for them (same script Full Search already uses) -- zero new infra, one new
-  workflow file.
-- **BYO LLM key, not a shared one**: each user who wants their scheduled runs to be genuinely LLM-driven (real
-  tool-selection, not the deterministic fallback) supplies their own key from a free-tier provider (Groq +
-  an open-source model recommended -- see below). This is the only design that keeps the shared deployment's
-  cost at exactly $0 regardless of how many users enable Agent mode, since each person's LLM usage is billed
-  (or free-tier-limited) on their own account, not the owner's.
-  - **New responsibility this introduces**: unlike every other secret in this project (always typed by a human
-    into a dashboard, never stored by the app), a per-user LLM key has to persist server-side to run unattended
-    on a schedule. Store it with the same care as a passcode hash -- never log it, never return it from any read
-    endpoint, and prefer encrypting it at rest (not just relying on DB access control) given it's a live,
-    usable credential sitting in storage, unlike a passcode hash which is one-way.
-- **Alerts, browser first**: Web Push (service worker + push subscription per device, self-generated VAPID
-  keypair -- no external account needed, genuinely free) sent from the scheduled workflow when a run finds a
-  new hot lead. Email is real extra surface (a transactional email provider account, another credential) --
-  deliberately deferred; browser push covers the core "tell me when something good shows up" need without it.
-- **What decides "worth alerting"**: a simple hot-lead-count threshold is a fine v1 (no LLM needed for this
-  part even in LLM-driven mode) -- don't over-build judgment logic here before the basic loop is proven.
+**Product split (the user must tell them apart at a glance):**
+- **Search tab = "you drive."** Manual search, Run Full Search, filters, exports, thumbs. Runs only when clicked (roadmap 1-7 live here).
+- **Agent tab = "works for you."** On/off switch + "on duty" line (last/next run), its own accent color, **Today brief**,
+  **Activity feed** ("what I did and why"), **Approvals inbox** (proposed preference/watchlist changes), **Apply kits**
+  per top lead (tailored bullets, short cover note, screening answers incl. sponsorship answer, LinkedIn contact link).
+  Agent-found leads carry an "Agent" badge everywhere. Thumbs/status from either tab feed the same memory.
+- **Hard rule:** the agent never applies or sends anything. Drafts only; a human approves anything that changes its plan.
 
-**Why this design** (validated, not just proposed): it correctly separates "I search when I ask" (Full Search,
-free, synchronous, already built) from "it watches and tells me" (Agent, opt-in, autonomous, BYO-cost) -- which
-is the actual distinction users mean by "agent" vs. "tool." It reuses 100% of existing infra (private data repo,
-run_for_user.py, the data_repo.py pattern) rather than inventing a new automation substrate. And it sequences
-correctly: push notifications before email, because push is free-by-construction and email isn't.
+**Capabilities (ranked):** (1) per-user company watchlist polled every few hours via the existing Greenhouse/Lever/Ashby
+fetchers in `free_sources.py`, seeded from profile + thumbs-up history + H1B signal DB; (2) apply kits for the top 3-5
+new leads (LLM picks, logs why it skipped others); (3) pipeline follow-ups (status Applied/Interview/Rejected: draft
+follow-up after 7 days unchanged, flag vanished postings, interview prep pack); (4) weekly self-review proposing
+preference/title/source/watchlist changes, applied only on approval; (5) daily Today brief, shown at top of the Agent tab and sent by browser Web Push (VAPID, no external account).
 
-**Recommended LLM for BYO**: Groq, serving an open-source model (Llama 3.3 70B or newer) -- free tier, no card,
-OpenAI-compatible (zero new code, `LLM_PROVIDER=openai` + `LLM_BASE_URL` already supports it), and plenty
-accurate for the scoped tasks below (structured extraction + short-form writing, not frontier reasoning).
+**Memory:** the LLM remembers nothing between runs. Each run reloads profile settings, a plain-sentence **Preferences**
+list (changed only by approved weekly review or direct edit), recent statuses + thumbs, and the watchlist. Raw counts
+feed `fit_service.feedback_bias`; preference sentences + notes go to the LLM as context. Personal opinions never go in the
+shared company-signal DB -- only facts (e.g. a posting says no sponsorship).
+
+**Storage:** Phase A (owner only) = existing `store.py`/SQLite + private data repo JSON. Phase B (multi-user) = each user's
+Google Sheet in their own Drive is the source of truth (tabs Leads, Preferences, Watchlist, Activity), kits/prep packs as
+Google Docs in a "JobFinder" folder, OAuth scope `drive.file`, consent screen in Production. Owner side keeps only
+seen/dedupe, shared H1B DB, profile settings, encrypted tokens, usage counters.
+
+**LLM:** Phase A = owner's key via existing `LLM_PROVIDER=openai` (Groq/Gemini). Phase B = per-user OpenRouter OAuth PKCE
+(user-owned key, encrypted, usable by scheduled runs); pasted Gemini key fallback. Puter.js rejected (browser-only).
+LLM only on top leads, kits, weekly review -- never the full ~3000-posting pool. Warn users free providers may log prompts.
+
+**Infra/limits:** one SHARED scrape per weekday in the private data repo's scheduled workflow saves the pool; per-user
+scoring against it is cheap. Manual Run Full Search re-scores today's pool; "Fresh scrape now" 1/user/day. Budget: GitHub
+Pro 3,000 Actions min/mo on the private repo (a full run ~10-20 min; 811s observed). Phase B adds Google sign-in (ID token
+verified server-side), `MAX_USERS` seat cap (15) + waitlist + owner push on join, owner-only admin view (approvals, minutes
+used vs 3,000). Passcode login stays as owner backup.
+
+**Naming:** existing `/agent/*` endpoints are the Full Search pipeline and are NOT renamed; new Agent-tab endpoints live under `/agentmode/*`.
+
+**Phases:** A = owner-only Agent v1 (tab, daily loop, watchlist, kits, brief, activity, approvals; push may be A2).
+B = multi-user foundation (Google sign-in, seats/waitlist/admin, Drive sheet, OpenRouter PKCE, encrypted tokens).
+C = follow-ups/interview prep + weekly self-review for all users. D = measure (kits used, Today picks applied to), cut what is unused.
 
 ## Roadmap (priority order, updated 2026-11-18; items 1-7 landed 2026-11-18)
 1. **DONE. Wire feedback into scoring.** Thumbs up/down (`POST /feedback`) used to only affect the legacy
@@ -242,14 +252,14 @@ accurate for the scoped tasks below (structured extraction + short-form writing,
    require payment. **Generates only, never sends** -- `POST /outreach/draft` returns the text; the UI shows
    it in a read-only textarea with a Copy button. Consistent with the existing hard rule that this project
    never submits applications or sends messages for the user.
-8. **Agent (true automation)** -- see full design above. The biggest item here; everything above (1-7) landed
-   2026-11-18, so the Agent's scheduled runs can reuse the same scoring/matching/contact/outreach pipeline.
+8. **Agent (true automation)** -- design settled, phases A-D, see "Agent (true automation)" above and
+   `docs/AGENT_SPEC.md`. Reuses items 1-7 (scoring, contact link, sponsorship answer, outreach drafting, feedback).
 9. Dice (or another free contract board) for the C2C track. Investigated 2026-11: no working public API
    (`job-search-api.svc.dhigroupinc.com` 403s on a stale key) -- only option is scraping its results page, fragile
    and likely against ToS. Deliberately skipped; revisit only with a real free API or if the scrape-risk trade-off
    is accepted.
 10. A real profile-editing UI (today a saved profile can only be set via `store.save_profile()`, not the
     frontend -- the in-app filters panel still only does its per-run overlay). Watch whether the private data
-    repo's free Actions minutes (2,000/mo, private) ever become a real constraint once Agent (item 8) adds
+    repo's free Actions minutes (3,000/mo on GitHub Pro, private) ever become a real constraint once Agent (item 8) adds
     scheduled runs on top of on-demand ones -- not yet a problem at current scale.
 11. If LinkedIn 429s climb again, add optional proxies (`JOBSPY_PROXIES`) or drop LinkedIn's `results_wanted`.

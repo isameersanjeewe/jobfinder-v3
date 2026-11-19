@@ -27,3 +27,6 @@ backend/.env
 docs/*.local.md
 CLAUDE.local.md
 .manifest.md5
+
+# Claude Code agent worktrees (local only)
+.claude/worktrees/
