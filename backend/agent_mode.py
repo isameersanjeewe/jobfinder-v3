@@ -41,7 +41,8 @@ KITS_PER_CYCLE = int(os.getenv("AGENT_KITS_PER_CYCLE", "4"))
 MIN_PICKS = 3
 LLM_MAX_CALLS = int(os.getenv("AGENT_LLM_MAX_CALLS_PER_CYCLE", "6"))
 TOKEN_BUDGET = int(os.getenv("AGENT_CYCLE_TOKEN_BUDGET", "18000"))
-LLM_MIN_GAP = float(os.getenv("AGENT_LLM_MIN_GAP_SECONDS", "4"))
+# Groq's free plan allows 8K tokens/minute: space calls out there so a cycle doesn't hit HTTP 429
+LLM_MIN_GAP = float(os.getenv("AGENT_LLM_MIN_GAP_SECONDS", "15" if "groq.com" in fit_service.LLM_BASE_URL else "4"))
 LLM_TIMEOUT = int(os.getenv("AGENT_LLM_TIMEOUT", "30"))
 SHORTLIST = int(os.getenv("AGENT_SHORTLIST", "10"))
 POOL_DAYS = int(os.getenv("AGENT_POOL_DAYS", "7"))           # saved Full Search leads this recent are candidates
@@ -141,7 +142,7 @@ def _llm_request(prompt: str, max_tokens: int) -> str:
         return "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
     r = requests.post(f"{fit_service.LLM_BASE_URL}/chat/completions", timeout=LLM_TIMEOUT,
                       headers={"Authorization": f"Bearer {fit_service.LLM_API_KEY}"},
-                      json={"model": fit_service.LLM_MODEL, "temperature": 0.2, "max_tokens": max_tokens,
+                      json={"model": fit_service.LLM_MODEL, "temperature": 0.2, **fit_service.openai_params(max_tokens),
                             "messages": [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": prompt}]})
     r.raise_for_status()
     return r.json()["choices"][0]["message"].get("content") or ""

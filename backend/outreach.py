@@ -60,7 +60,8 @@ def draft_outreach(job: dict, resume_text: str = "", tone: str = "recruiter") ->
             else:
                 r = requests.post(f"{fit_service.LLM_BASE_URL}/chat/completions", timeout=OUTREACH_TIMEOUT,
                                    headers={"Authorization": f"Bearer {fit_service.LLM_API_KEY}"},
-                                   json={"model": fit_service.LLM_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.4})
+                                   json={"model": fit_service.LLM_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.4,
+                                         **fit_service.openai_params()})
                 r.raise_for_status()
                 text = (r.json()["choices"][0]["message"].get("content") or "").strip()
             if text:

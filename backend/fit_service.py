@@ -18,6 +18,14 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "none").strip().lower()
 LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile").strip()
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1").strip().rstrip("/")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
+
+
+def openai_params(max_tokens: int | None = None) -> dict:
+    """Extra chat/completions fields. Reasoning models (gpt-oss on Groq) spend completion tokens on hidden
+    thinking first: ask for low effort and leave room so the visible answer isn't cut off."""
+    if "gpt-oss" not in LLM_MODEL:
+        return {"max_tokens": max_tokens} if max_tokens else {}
+    return {"reasoning_effort": "low", **({"max_tokens": max_tokens + 1000} if max_tokens else {})}
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 LLM_FIT_TIMEOUT = int(os.getenv("LLM_FIT_TIMEOUT", "20"))
 
@@ -100,7 +108,8 @@ def llm_gap_fit(job: dict, resume_text: str) -> dict | None:
         else:
             r = requests.post(f"{LLM_BASE_URL}/chat/completions", timeout=LLM_FIT_TIMEOUT,
                                headers={"Authorization": f"Bearer {LLM_API_KEY}"},
-                               json={"model": LLM_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0})
+                               json={"model": LLM_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0,
+                                     **openai_params()})
             r.raise_for_status()
             text = r.json()["choices"][0]["message"].get("content") or ""
         m = re.search(r"\{.*\}", text, re.S)
