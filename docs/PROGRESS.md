@@ -66,6 +66,10 @@ the data repo first (`_agentmode_load`), so a write can't sync an empty state ov
   2. Enter a user ID, click 🎲 for a passcode, then **+ Add tester**.
   3. Send them the app URL, their user ID + passcode, and the API_TOKEN (they paste it under Search → Connection settings).
   Users persist in the data repo (`data/_users.json`, passcodes hashed).
+  On a new device, the tester opens "First time on this device?" on the login screen and pastes the app access token
+  (API_TOKEN) once (`5d78831`; before that, new testers could not sign in at all).
+  To reset a passcode, use "Add tester" again with the same user ID. Passcodes can be checked offline against
+  `data/_users.json` with `auth.verify_passcode()`, without logging in.
 - **Where tester data lives today:** private repo `jobfinder-data`:
   - `data/<user>/leads.json` and `seen.json`
   - `data/<user>/agent.json` (settings, targets, resume text, notes, kits, thumbs, statuses, watchlist, activity)
