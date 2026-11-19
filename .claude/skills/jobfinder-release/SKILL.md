@@ -25,7 +25,7 @@ Point to `docs/OWNER_SETUP.md` and list only the steps this release needs:
 - **Private data repo:** copy the changed `data-repo-template/` files (workflows, scripts). Set Actions secrets (LLM vars, `RULES_JSON` if used) and the repo variable `APP_REF` = the reviewed commit SHA, so scheduled jobs don't run whatever is newest on `main`.
 
 ## 4. Push (only on the owner's explicit OK)
-`git push origin agentic-v4`, or the branch Render deploys from (check before pushing). Render redeploys automatically and the first request after deploy can take ~1 minute (cold start).
+**Render deploys from `main`** (the service header shows the branch and live commit). Pushing `agentic-v4` alone deploys nothing. To ship: push `agentic-v4`, then fast-forward `main` (`git push origin agentic-v4:main`), which needs the owner's explicit OK to deploy, because it's the default branch. Render redeploys automatically and the first request after deploy can take ~1 minute (cold start).
 
 ## 5. Live checks
 1. `curl -s <backend>/` must show `"auth": true`. If it's false, stop and tell the owner the API is open.
@@ -39,3 +39,5 @@ Point to `docs/OWNER_SETUP.md` and list only the steps this release needs:
 ## Lessons
 Add one dated line after each release.
 - 2026-11-18: Production was found with `"auth": false` and a public backend URL, so admin was open to anyone. Always run check 5.1 after a deploy, and before telling the owner something is safe.
+- 2026-11-18: Render deploys from `main`, not `agentic-v4`. The first push "succeeded" but production kept running the old commit. Check the deploy branch on the Render service page before claiming something is live.
+- 2026-11-18: The owner believed A-0 was done, but Render had only `DATA_REPO`, `DATA_REPO_TOKEN` and `SESSION_SECRET`. Check env key names (never values) in the Render Environment tab instead of relying on memory.

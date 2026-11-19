@@ -50,13 +50,6 @@ SECURITY_HEADERS = {"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-
 if not API_TOKEN:
     log.warning("API_TOKEN not set: API is unauthenticated (fine for localhost, unsafe when deployed)")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept", "Authorization", "X-Session-Token", "X-Admin-Token"],
-)
 
 
 @app.on_event("startup")
@@ -88,6 +81,18 @@ async def auth_and_headers(request: Request, call_next):
     resp = await call_next(request)
     resp.headers.update(SECURITY_HEADERS)
     return resp
+
+
+# CORS must be registered AFTER the auth middleware above: Starlette runs the last-added middleware
+# outermost, so this order makes CORS wrap auth and its 401/403 responses carry Access-Control-Allow-Origin.
+# Without it a browser blocks the 401, and the UI shows "server unavailable" instead of "wrong token".
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept", "Authorization", "X-Session-Token", "X-Admin-Token"],
+)
 
 
 # ── PER-USER AUTH (second layer, on top of API_TOKEN above) ───────────────────

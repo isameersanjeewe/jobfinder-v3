@@ -314,6 +314,15 @@ assert _e["no_sponsorship_count"] == 2 and _e["auto_reject"], _e              # 
 assert rules_service.record_no_sponsorship_hits({}, local_path=_ar) == {}
 print("AUTO-REJECT DEDUPE: cross-run URL dedupe, batched write OK")
 
+# ════ 7c. CORS on auth rejections: a browser must be able to READ a 401, or the UI shows "server down" ════
+main.API_TOKEN = "s3cret-token"
+try:
+    _r = c.get("/leads", headers={"Origin": "https://example.vercel.app"})
+    assert _r.status_code == 401 and _r.headers.get("access-control-allow-origin") in ("*", "https://example.vercel.app"), dict(_r.headers)
+finally:
+    main.API_TOKEN = ""
+print("CORS: 401 from the API_TOKEN gate carries Access-Control-Allow-Origin OK")
+
 # ════ 8. KNOWN FAILURES (real bugs; tests kept, backend untouched) ════
 def _deleted_user_token_still_valid():
     tok = mk("qa_gone", "gone-pass-12"); store.delete_user("qa_gone")
