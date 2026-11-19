@@ -1,6 +1,6 @@
 # CLAUDE.md — JobFinder v4 (agentic)
 
-Read this first. Domain detail (search rules, sponsorship method, scoring, source quirks) is in `docs/CONTEXT.md`.
+Read this first, then `docs/PROGRESS.md` (latest state, commits, open items, next steps). Domain detail (search rules, sponsorship method, scoring, source quirks) is in `docs/CONTEXT.md`.
 Personal working notes, if any, are in `CLAUDE.local.md` and `docs/*.local.md` (gitignored, never committed).
 
 ## What this is
