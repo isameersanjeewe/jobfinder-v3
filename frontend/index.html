@@ -255,6 +255,12 @@ main { padding:20px 24px; min-width:0; }
     <input type="text" id="login-user-id" autocomplete="username">
     <label for="login-passcode">Passcode</label>
     <input type="password" id="login-passcode" autocomplete="current-password">
+    <details id="login-token-box" style="margin-top:12px">
+      <summary style="font-size:12.5px">First time on this device?</summary>
+      <label for="login-api-token">App access token <span class="hint">(from whoever invited you)</span></label>
+      <input type="password" id="login-api-token" autocomplete="off">
+      <p class="hint" style="margin-top:4px">Needed once per browser. It's stored only on this device.</p>
+    </details>
     <p class="hint" id="login-error" style="color:var(--red); margin-top:8px; min-height:14px"></p>
     <button class="btn" id="login-submit" type="button" style="margin-top:6px">Sign in</button>
   </div>
@@ -830,14 +836,23 @@ async function doLogin() {
   const passcode = $("login-passcode").value;
   $("login-error").textContent = "";
   if (!userId || !passcode) { $("login-error").textContent = "Enter a user ID and passcode."; return; }
+  if (!store.get("api_token") && !$("login-api-token").value.trim()) $("login-token-box").open = true;
+  const accessTok = $("login-api-token").value.trim();
+  if (accessTok) store.set("api_token", accessTok);
   const btn = $("login-submit"); btn.disabled = true; btn.textContent = "Signing in…";
   try {
     const res = await postJSON("/auth/login", { user_id: userId, passcode });
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && data.error === "unauthorized") {   // the API gate, not the passcode
+      $("login-token-box").open = true;
+      throw new Error(store.get("api_token") ? "The app access token is wrong. Check it with whoever invited you."
+                                             : "This device needs the app access token first (below).");
+    }
+    if (res.status === 429) throw new Error("Too many wrong attempts. Wait 15 minutes, then try again.");
     if (!res.ok) throw new Error(data.error || "invalid user_id or passcode");
     store.set("session_token", data.token || "");
     store.set("session_user", data.user_id || userId);
-    $("login-passcode").value = "";
+    $("login-passcode").value = ""; $("login-api-token").value = "";
     showApp();
   } catch (e) {
     $("login-error").textContent = e.message || "invalid user_id or passcode";
